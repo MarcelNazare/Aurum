@@ -1,10 +1,17 @@
 # Aurum · XAU/USD ICT Scanner
 
-> A terminal-based gold scanner that detects Smart Money Concepts (ICT) setups in real time and renders them as an ASCII chart with entry, stop, and take-profit levels.
-
 ![Aurum Terminal Preview](assets/aurum-snapshot.png)
 
+> A gold scanner that detects Smart Money Concepts (ICT) setups in real time — available as a **terminal (TUI)** app and a **local web UI**, both powered by the same Rust engine.
+
 **Aurum** (Latin for *gold*) analyses live **XAU/USD** candles from [Twelve Data](https://twelvedata.com) and surfaces high-confluence trade setups using three independent strategy engines, each scored by a confluence model before being displayed.
+
+Ships as **two binaries** sharing one codebase:
+
+| Binary | Interface | Use case |
+|---|---|---|
+| `aurum-tui` | Terminal (ANSI chart + tables) | SSH, scripting, no browser |
+| `aurum-web` | Local web UI (canvas chart + HTML table) | Visual review, screenshots, sharing on your LAN |
 
 ```
 ╔══════════════════════════════════════════════════════════════════════╗
@@ -38,7 +45,9 @@
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Configuration](#configuration)
-- [Usage](#usage)
+- [Usage — terminal mode](#usage--terminal-mode)
+- [Usage — web mode](#usage--web-mode)
+- [Architecture](#architecture)
 - [Strategies](#strategies)
 - [Reading the chart](#reading-the-chart)
 - [Confluence scoring](#confluence-scoring)
@@ -52,13 +61,17 @@
 
 ## Features
 
-- **Real market data** — pulls live XAU/USD OHLCV candles from Twelve Data (1min → 1day)
-- **Three ICT strategy engines** running in parallel:
+- **Real market data** — live XAU/USD OHLCV from Twelve Data (1min → 1day)
+- **Three ICT strategy engines** in parallel:
   - Liquidity Sweep → MSS → Order Block → LTF IFVG
   - Double BOS → Supply/Demand → LTF Breaker Block
   - HTF ChoCh → Unmitigated FVG → LTF IFVG
-- **Confluence scoring** (0–12) with reasoning — low-quality setups are filtered out
-- **Terminal chart** — candles, supply/demand zones, FVGs, IFVGs, BOS / ChoCh / MSS, sweeps, and entry/SL/TP bands drawn in-place
+- **Confluence scoring** (0–12) with reasoning — low-quality setups filtered out
+- **Two frontends, one engine**:
+  - `aurum-tui` — full ASCII chart directly in your terminal
+  - `aurum-web` — local web UI (canvas chart) served by the Rust process
+- **Same detection everywhere** — the web UI never re-implements strategies; it renders the Rust engine's JSON
+- **API key never leaves the machine** — even in web mode the key lives in `.env` on the server, not in the browser
 - **Multi-target exits** — TP1 (1R), TP2 (2R), TP3 (structure-based)
 - **ATR-buffered stops** — no fixed pip counts
 - **HTF bias + premium/discount filters** — trades aligned with the higher-timeframe narrative only
@@ -69,8 +82,9 @@
 ## Prerequisites
 
 - **Rust 1.75+** — install from [rustup.rs](https://rustup.rs)
-- **A free Twelve Data API key** — get one at [twelvedata.com/register](https://twelvedata.com/register) (8 req/min, 800/day, no credit card)
+- **A free Twelve Data API key** — [twelvedata.com/register](https://twelvedata.com/register) (8 req/min, 800/day, no credit card)
 - **Windows / macOS / Linux** — anything Rust supports
+- For the web UI: any modern browser (Chrome, Firefox, Safari, Edge)
 
 ---
 
@@ -80,24 +94,31 @@
 git clone https://github.com/<you>/aurum.git
 cd aurum
 
-# Create the .env file from the template
-cp .env.example .env          # Windows PowerShell: Copy-Item .env.example .env
+# Create .env from the template
+cp .env.example .env            # Windows PowerShell: Copy-Item .env.example .env
 
-# Edit .env and paste your Twelve Data API key
+# Paste your Twelve Data API key
 $EDITOR .env
 
-# Build
+# Build both binaries
 cargo build --release
 # or: make release
 ```
 
-The binary lands at `target/release/aurum` (or `aurum.exe` on Windows).
+Resulting binaries:
+
+```
+target/release/aurum-tui     ← terminal scanner
+target/release/aurum-web     ← web server (embedded HTML, single binary)
+```
+
+Both read the same `.env` — no duplication, no separate config.
 
 ---
 
 ## Configuration
 
-All runtime settings live in `.env`:
+All settings live in `.env` and are read by both binaries:
 
 ```dotenv
 TWELVE_DATA_API_KEY=your_key_here      # required
@@ -107,16 +128,17 @@ AURUM_OUTPUTSIZE=500                   # number of candles to fetch
 AURUM_WINDOW=100                       # candles shown in chart
 AURUM_HTF_RATIO=5                      # LTF → HTF aggregation ratio
 AURUM_MIN_SCORE=6                      # minimum confluence score to display
+AURUM_PORT=3000                        # web server port (web mode only)
 ```
 
 **Precedence order** (highest wins):
 
-1. CLI argument — `aurum 1h` overrides interval
-2. Process environment — `TWELVE_DATA_API_KEY=abc aurum`
+1. CLI argument — `aurum-tui 1h` overrides interval, `aurum-web --port 8080` overrides port
+2. Process environment — `TWELVE_DATA_API_KEY=abc ./target/release/aurum-tui`
 3. `.env` file
 4. Built-in default
 
-`.env` is gitignored. `.env.example` is safe to commit.
+`.env` is gitignored. `.env.example` is committed.
 
 ### Common `AURUM_HTF_RATIO` values
 
@@ -132,21 +154,20 @@ Pick a ratio that puts your HTF at the timeframe you actually use for bias (1h o
 
 ---
 
-## Usage
+## Usage — terminal mode
 
 ```bash
-# Default run — reads .env
-./target/release/aurum
+# default run — reads .env
+./target/release/aurum-tui
 
-# Override interval without touching .env
-./target/release/aurum 1h
+# override interval from CLI
+./target/release/aurum-tui 1h
 
-# With make
-make run
-make watch INTERVAL=1h
+# help
+./target/release/aurum-tui --help
 
-# Container / CI (no .env file)
-TWELVE_DATA_API_KEY=abc123 ./target/release/aurum
+# via make
+make tui
 ```
 
 ### Example output
@@ -160,7 +181,7 @@ TWELVE_DATA_API_KEY=abc123 ./target/release/aurum
 ╚══════════════════════════════════════════════════════════════════════╝
   BIAS: LONG (last HTF BOS @ bar 142)
 
-  [ chart ]
+  [ ASCII chart ]
 
   LEGEND  ▲▼ BOS  ◆ ChoCh  ✦ MSS  ○ Sweep  ◈ IFVG  ░ FVG
   ██ Supply  ██ Demand  ▶ Price  ══ Entry  ── SL  ── TP
@@ -174,6 +195,75 @@ TWELVE_DATA_API_KEY=abc123 ./target/release/aurum
 
   Total: 1 signal
 ```
+
+---
+
+## Usage — web mode
+
+```bash
+# start the local server
+./target/release/aurum-web
+# → ✔ Aurum web UI: http://127.0.0.1:3000/
+
+# custom port
+./target/release/aurum-web --port 8080
+
+# via make
+make web PORT=8080
+```
+
+Open the printed URL in your browser. The page shows:
+
+- **Bias bar** — current HTF direction with the last structural event
+- **Canvas chart** — candles, supply/demand zones, FVGs, IFVGs, BOS / ChoCh / MSS, sweeps, and entry/SL/TP bands
+- **Signals table** — one row per setup with reasons as inline pills
+- **Controls** — interval, bars, window, HTF ratio, min score
+
+All analysis runs on the Rust server. The browser just calls `GET /api/analyze` and renders JSON. **Your API key is never sent to the browser.**
+
+### Web UI safety notes
+
+- Binds to **`127.0.0.1`** by default — not reachable from other machines
+- No authentication — do not expose to a public network without a reverse proxy
+- No telemetry, no analytics, no CDN calls
+- `index.html` is embedded into the binary at compile time (`include_str!`) — one file, zero deployment friction
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                                                              │
+│  aurum-tui binary             aurum-web binary               │
+│  ─────────────────            ──────────────────             │
+│  Chart renderer               axum HTTP server               │
+│  (ASCII, ANSI colors)         (GET /, GET /api/analyze)      │
+│         │                              │                     │
+│         └──────────────┬───────────────┘                     │
+│                        ▼                                     │
+│              aurum library (src/lib.rs)                      │
+│              ─────────────────────────                       │
+│              • Candle, Signal, Zone, Fvg types               │
+│              • swings, structure, FVG, IFVG, order blocks    │
+│              • strategy1, strategy2, strategy3               │
+│              • confluence scoring                            │
+│              • fetch_twelvedata (HTTP client)                │
+│              • server module (axum)                          │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+              Twelve Data API
+              (key in .env, never in browser)
+```
+
+Key properties:
+
+- **One source of truth** — strategies live only in `src/lib.rs`
+- **Two thin binaries** — each `main()` is < 200 lines of glue
+- **No duplicated logic** — web UI is a renderer, not a reimplementation
+- **Shared `.env`** — both binaries read the same config
 
 ---
 
@@ -218,6 +308,8 @@ Each strategy follows the same pipeline: **HTF context → POI → LTF trigger �
 ---
 
 ## Reading the chart
+
+The same legend applies in both terminal and web modes:
 
 | Symbol | Meaning | Colour |
 |---|---|---|
@@ -272,19 +364,24 @@ aurum/
 ├── .env                    # your key — gitignored
 ├── .env.example            # template — committed
 ├── .gitignore
+├── index.html              # embedded by aurum-web via include_str!
 └── src/
-    └── main.rs             # everything (single-file binary)
+    ├── lib.rs              # shared engine (types, detection, strategies, fetch)
+    ├── server.rs           # axum server module (used by aurum-web)
+    └── bin/
+        ├── aurum-tui.rs    # terminal binary
+        └── aurum-web.rs    # web binary
 ```
 
-Inside `main.rs`, sections are delimited by boxed comments:
+Inside `lib.rs`, sections are delimited by boxed comments:
 
 - `DATA MODEL` — `Candle`, `Side`, `Zone`, `Signal`, …
 - `DETECTION PRIMITIVES` — swings, sweeps, structure, FVGs, IFVGs, order blocks, ATR
 - `CONFLUENCE SCORING` — `Factors`, `score()`, `build_signal()`
 - `STRATEGY 1/2/3` — three independent scanners
-- `TERMINAL CHART` — ASCII renderer
 - `DATA FETCHER` — Twelve Data HTTP client
-- `MAIN` — wiring
+
+The terminal chart lives in `src/bin/aurum-tui.rs` (it's not needed elsewhere). The server and embedded HTML live in `src/server.rs` / `index.html`.
 
 ---
 
@@ -296,30 +393,72 @@ The included `Makefile` wraps common commands:
 |---|---|
 | `make help` | List targets |
 | `make setup` | Create `.env` from `.env.example` |
-| `make build` | Debug build |
-| `make release` | Optimized build → `target/release/aurum` |
-| `make run` | Run with `.env` defaults |
-| `make watch INTERVAL=1h` | Run with a custom interval |
-| `make check` | Type-check only |
+| `make build` | Debug build (both binaries) |
+| `make release` | Optimized build → `target/release/aurum-{tui,web}` |
+| `make tui` | Run the terminal scanner |
+| `make web PORT=3000` | Run the web UI |
+| `make check` | Type-check all targets |
 | `make fmt` | `cargo fmt` |
-| `make lint` | `cargo clippy -- -D warnings` |
-| `make test` | `cargo test` |
+| `make lint` | `cargo clippy --all-targets -- -D warnings` |
 | `make clean` | Remove `target/` |
+
+### Building only one binary
+
+```bash
+cargo build --release --bin aurum-tui
+cargo build --release --bin aurum-web
+```
+
+### Optional: exclude axum from the TUI build
+
+If you want `aurum-tui` without the web stack linked in:
+
+```toml
+[features]
+default = ["web"]
+web = ["dep:axum"]
+
+[dependencies]
+axum = { version = "0.7", optional = true }
+```
+
+And in `lib.rs`:
+
+```rust
+#[cfg(feature = "web")]
+pub mod server;
+```
+
+Then:
+
+```bash
+cargo build --release --bin aurum-tui --no-default-features   # smaller, TUI only
+cargo build --release --bin aurum-web                         # with axum
+```
 
 ---
 
 ## Troubleshooting
 
-### `can't find bin aurum at path src/main.rs`
+### `can't find bin aurum-tui at path src/bin/aurum-tui.rs`
 
-Cargo can't find `src/main.rs`. Confirm:
+Cargo can't find a binary. Confirm:
 
 ```powershell
 # Windows
-Get-ChildItem -Recurse -Depth 1 -Include *.rs, *.toml
+Get-ChildItem -Recurse -Depth 2 -Include *.rs, *.toml
 ```
 
-`main.rs` must be at `aurum\src\main.rs`, not `aurum\main.rs`.
+Expected layout:
+
+```
+aurum\Cargo.toml
+aurum\src\lib.rs
+aurum\src\server.rs
+aurum\src\bin\aurum-tui.rs
+aurum\src\bin\aurum-web.rs
+aurum\index.html
+```
 
 ### `TWELVE_DATA_API_KEY missing or placeholder`
 
@@ -340,9 +479,40 @@ The API returned an error message. Common causes:
 
 Your fetch returned fewer candles than the analysis requires. Raise `AURUM_OUTPUTSIZE` or use a larger interval.
 
-### Chart looks garbled
+### Terminal chart looks garbled
 
 Your terminal needs **256-color ANSI** support and a font with box-drawing characters (`█`, `░`, `│`, `─`). On Windows, use **Windows Terminal** or **VS Code's integrated terminal** — the old `cmd.exe` console misrenders colors.
+
+### Web UI shows "Cannot reach the Aurum server"
+
+The Rust process isn't running, or the port changed. Confirm:
+
+```bash
+# is aurum-web running?
+./target/release/aurum-web --port 3000
+
+# is the port open?
+curl http://127.0.0.1:3000/api/analyze?interval=15min
+```
+
+If the process is running, check that you opened `http://127.0.0.1:<port>/` — not `https://` and not a different port.
+
+### Web UI shows an error in the status bar
+
+The Rust server forwards Twelve Data's error text verbatim. Common cases match the API table above. Open DevTools → Network → `/api/analyze` to inspect the raw JSON response.
+
+### Port already in use
+
+```bash
+# use a different port
+./target/release/aurum-web --port 8080
+
+# or find and kill the current holder
+# macOS/Linux:
+lsof -ti:3000 | xargs kill
+# Windows PowerShell:
+Get-NetTCPConnection -LocalPort 3000 | Select-Object OwningProcess | Stop-Process
+```
 
 ---
 
@@ -355,7 +525,7 @@ Your terminal needs **256-color ANSI** support and a font with box-drawing chara
 - **Response order:** newest-first → the fetcher reverses to chronological
 - **Authentication:** API key only (public market data — no signing, no secrets in headers)
 
-The scanner makes **exactly one request per run**, so you can safely run it several times per minute without hitting the rate limit.
+Each run of either binary makes **exactly one Twelve Data request**, so you can run the terminal and the web UI side by side without doubling your quota (each still counts as 1).
 
 ---
 
