@@ -3,14 +3,14 @@ ENV     := .env
 ENV_EX  := .env.example
 PORT    ?= 3000
 
-.PHONY: help setup build release tui web clean check fmt lint
+.PHONY: help setup build release tui web web-headless clean check fmt lint
 
 help: ## Show this help
 	@echo "aurum-tui  · terminal scanner"
-	@echo "aurum-web  · web UI on http://127.0.0.1:$(PORT)"
+	@echo "aurum-web  · web UI on http://127.0.0.1:$(PORT) (auto-opens browser)"
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 setup: $(ENV) ## Create .env from .env.example
 $(ENV):
@@ -27,8 +27,11 @@ release: ## Optimized build (both binaries)
 tui: $(ENV) ## Run the terminal scanner
 	$(CARGO) run --release --bin aurum-tui
 
-web: $(ENV) ## Run the web UI on http://127.0.0.1:$(PORT)
+web: $(ENV) ## Run the web UI (auto-opens browser)
 	$(CARGO) run --release --bin aurum-web -- --port $(PORT)
+
+web-headless: $(ENV) ## Run the web UI without opening a browser
+	$(CARGO) run --release --bin aurum-web -- --port $(PORT) --no-open
 
 check: ## Type-check everything
 	$(CARGO) check --all-targets

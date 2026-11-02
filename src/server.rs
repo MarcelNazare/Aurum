@@ -8,6 +8,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use crate::{
     aggregate, detect_structure, find_fvgs, fvg_status_at, htf_bias, ifvg_entries,
@@ -73,6 +74,7 @@ pub async fn run(
     api_key: String,
     default_symbol: String,
     port: u16,
+    open_browser: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let state = AppState { api_key, default_symbol };
 
@@ -82,9 +84,26 @@ pub async fn run(
         .with_state(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    println!("✔ Aurum web UI: http://{}/", addr);
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .map_err(|e| format!("could not bind {}: {} — is another instance running?", addr, e))?;
+
+    let url = format!("http://{}/", addr);
+    println!("✔ Aurum web UI: {}", url);
     println!("  key loaded from .env — never exposed to the browser");
+
+    if open_browser {
+        let url_bg = url.clone();
+        tokio::spawn(async move {
+            // give axum a beat to start accepting connections
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            match webbrowser::open(&url_bg) {
+                Ok(_)  => println!("✔ opened {} in your default browser", url_bg),
+                Err(e) => eprintln!("· could not open browser automatically: {}", e),
+            }
+        });
+    }
+
     axum::serve(listener, app).await?;
     Ok(())
 }
@@ -122,16 +141,21 @@ async fn analyze(
     let all_ifvgs  = ifvg_entries(&candles);
 
     let fresh_fvgs: Vec<Fvg> = {
-        let mut v: Vec<Fvg> = find_fvgs(&candles).into_iter()
+        let mut v: Vec<Fvg> = find_fvgs(&candles)
+            .into_iter()
             .filter(|f| fvg_status_at(&candles, f, candles.len()) == FvgStatus::Fresh)
             .collect();
-        if v.len() > 8 { v = v.split_off(v.len() - 8); }
+        if v.len() > 8 {
+            v = v.split_off(v.len() - 8);
+        }
         v
     };
 
     let recent_ifvgs: Vec<IfvgEntry> = {
         let mut v = all_ifvgs;
-        if v.len() > 6 { v = v.split_off(v.len() - 6); }
+        if v.len() > 6 {
+            v = v.split_off(v.len() - 6);
+        }
         v
     };
 

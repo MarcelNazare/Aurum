@@ -7,7 +7,8 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
 <style>
   :root{--bg:#0b0d10;--bg-soft:#14171c;--border:#1f242b;--text:#e5e7eb;--dim:#6b7280;
-        --green:#22c55e;--red:#ef4444;--gold:#d4af37;--cyan:#22d3ee;--magenta:#d946ef;--amber:#eab308}
+        --green:#22c55e;--red:#ef4444;--gold:#d4af37;--cyan:#22d3ee;--magenta:#d946ef;--amber:#eab308;
+        --blue:#3b82f6;--purple:#a855f7}
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
   body{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;background:var(--bg);color:var(--text);line-height:1.5;font-size:14px}
@@ -33,8 +34,21 @@
   .bias{padding:12px 24px;font-size:14px;border-bottom:1px solid var(--border);background:var(--bg-soft);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .bias.bull strong{color:var(--green)}.bias.bear strong{color:var(--red)}
   .bias .as-of{margin-left:auto;color:var(--dim);font-size:11px}
-  .chart-wrap{padding:16px 24px 0}
-  #chart{display:block;width:100%;height:500px;border-radius:6px;background:#0b0d10}
+  .chart-wrap{position:relative;padding:0 24px;margin-top:16px}
+  #chart{display:block;width:100%;height:560px;border-radius:6px;background:#0b0d10;cursor:crosshair}
+  .chart-info{position:absolute;top:8px;left:36px;right:36px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--dim);pointer-events:none;z-index:5;gap:12px;flex-wrap:wrap}
+  .chart-info button{pointer-events:auto;padding:3px 8px;font-size:10px;background:rgba(20,23,28,.85);border:1px solid var(--border);color:var(--text);border-radius:3px;cursor:pointer;font-family:inherit;letter-spacing:0}
+  .chart-info button:hover{border-color:var(--gold);color:var(--gold)}
+  .tooltip{position:absolute;background:rgba(11,13,16,.98);border:1px solid var(--gold);border-radius:6px;padding:10px 12px;font-size:12px;font-family:inherit;color:var(--text);pointer-events:none;z-index:100;box-shadow:0 4px 24px rgba(0,0,0,.7);min-width:180px;max-width:320px;backdrop-filter:blur(6px)}
+  .tooltip.hidden{display:none}
+  .tt-header{font-size:11px;color:var(--gold);letter-spacing:.06em;font-weight:700;text-transform:uppercase;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+  .tt-grid{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:12px}
+  .tt-label{color:var(--dim);font-size:11px}
+  .tt-val{text-align:right;font-variant-numeric:tabular-nums}
+  .tt-val.bull{color:var(--green)}.tt-val.bear{color:var(--red)}.tt-val.gold{color:var(--gold);font-weight:700}
+  .tt-dim{color:var(--dim);font-size:10px}
+  .tt-pills{margin-top:8px;padding-top:8px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:4px}
+  .tt-pills .pill{margin-right:0}
   .legend{padding:10px 24px 16px;font-size:11px;color:var(--dim);display:flex;flex-wrap:wrap;gap:14px}
   .legend span{white-space:nowrap}.legend span::before{content:'■';margin-right:4px;font-size:12px}
   .legend .bos::before{content:'▲';color:var(--amber)}
@@ -42,7 +56,7 @@
   .legend .mss::before{content:'✦';color:var(--magenta)}
   .legend .sweep::before{content:'○';color:var(--cyan)}
   .legend .ifvg::before{content:'◆';color:var(--magenta)}
-  .legend .fvg::before{content:'░';color:#3b82f6}
+  .legend .fvg::before{content:'░';color:var(--blue)}
   .legend .supply::before{color:var(--red)}.legend .demand::before{color:var(--green)}
   .legend .entry::before{content:'─';color:var(--green)}
   .legend .stop::before{content:'─';color:var(--red)}
@@ -83,7 +97,7 @@
       </select>
     </div>
     <div class="field"><label for="outputsize">Bars</label><input type="number" id="outputsize" value="500" min="100" max="5000"></div>
-    <div class="field"><label for="window">Window</label><input type="number" id="window" value="100" min="20" max="300"></div>
+    <div class="field"><label for="window">Window</label><input type="number" id="window" value="100" min="20" max="500"></div>
     <div class="field"><label for="htfRatio">HTF Ratio</label><input type="number" id="htfRatio" value="5" min="2" max="50"></div>
     <div class="field"><label for="minScore">Min Score</label><input type="number" id="minScore" value="6" min="0" max="12"></div>
   </div>
@@ -92,13 +106,23 @@
 
 <div id="status" class="status hidden"></div>
 <section id="biasBar" class="bias hidden"></section>
-<section class="chart-wrap"><canvas id="chart"></canvas></section>
+
+<section class="chart-wrap" id="chartWrap">
+  <canvas id="chart"></canvas>
+  <div class="chart-info">
+    <span id="chartRange"></span>
+    <button id="resetViewBtn" type="button">Reset view</button>
+  </div>
+  <div id="tooltip" class="tooltip hidden"></div>
+</section>
+
 <section class="legend">
   <span class="bos">BOS</span><span class="choch">ChoCh</span><span class="mss">MSS</span>
   <span class="sweep">Sweep</span><span class="ifvg">IFVG</span><span class="fvg">FVG</span>
   <span class="supply">Supply</span><span class="demand">Demand</span>
   <span class="entry">Entry</span><span class="stop">Stop</span><span class="tp">TP1/2/3</span>
 </section>
+
 <section class="signals">
   <h2>Signals</h2>
   <div id="signalsWrap"><div class="empty-state">Click <strong>Fetch &amp; Analyze</strong> to run the scanner.</div></div>
@@ -106,19 +130,65 @@
 <footer>AURUM · analysis runs on the local Rust server · no financial advice</footer>
 
 <script>
+// ═══════════════════════════════════════════════════════════════════════════
+// ELEMENT REFS + STATE
+// ═══════════════════════════════════════════════════════════════════════════
 const els = {
-  interval:   document.getElementById('interval'),
-  outputsize: document.getElementById('outputsize'),
-  window:     document.getElementById('window'),
-  htfRatio:   document.getElementById('htfRatio'),
-  minScore:   document.getElementById('minScore'),
-  fetchBtn:   document.getElementById('fetchBtn'),
-  status:     document.getElementById('status'),
-  biasBar:    document.getElementById('biasBar'),
-  chart:      document.getElementById('chart'),
-  signalsWrap:document.getElementById('signalsWrap'),
+  interval:    document.getElementById('interval'),
+  outputsize:  document.getElementById('outputsize'),
+  window:      document.getElementById('window'),
+  htfRatio:    document.getElementById('htfRatio'),
+  minScore:    document.getElementById('minScore'),
+  fetchBtn:    document.getElementById('fetchBtn'),
+  status:      document.getElementById('status'),
+  biasBar:     document.getElementById('biasBar'),
+  chart:       document.getElementById('chart'),
+  chartWrap:   document.getElementById('chartWrap'),
+  chartRange:  document.getElementById('chartRange'),
+  resetBtn:    document.getElementById('resetViewBtn'),
+  tooltip:     document.getElementById('tooltip'),
+  signalsWrap: document.getElementById('signalsWrap'),
 };
 
+const state = {
+  candles: [],
+  opts:    null,          // zones, fvgs, ifvgs, structures, sweeps, signals, interval
+  window:  100,           // visible candle count
+  offset:  0,             // candles hidden on the right (for panning)
+  layout:  null,
+  mouse:   { x: -1, y: -1, active: false },
+  hover:   null,          // { type, data, ... }
+  drag:    null,
+};
+
+const COL = {
+  bg:'#0b0d10', grid:'rgba(255,255,255,0.06)', border:'#1f242b', dim:'#6b7280',
+  green:'#22c55e', red:'#ef4444', gold:'#d4af37', cyan:'#22d3ee',
+  magenta:'#d946ef', amber:'#eab308', blue:'#3b82f6', purple:'#a855f7', white:'#ffffff',
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FORMATTERS
+// ═══════════════════════════════════════════════════════════════════════════
+const pad2 = n => String(n).padStart(2, '0');
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function fmtTsFull(ts, interval) {
+  const d = new Date(ts * 1000);
+  if (interval === '1day') {
+    return `${pad2(d.getUTCDate())} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  }
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth()+1)}-${pad2(d.getUTCDate())} ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
+}
+function fmtTsShort(ts, interval) {
+  const d = new Date(ts * 1000);
+  if (interval === '1day') return `${pad2(d.getUTCDate())}/${pad2(d.getUTCMonth()+1)}`;
+  return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// STATUS / BIAS / SIGNALS TABLE
+// ═══════════════════════════════════════════════════════════════════════════
 function setStatus(msg, type='info', loading=false){
   els.status.innerHTML='';
   if (loading) { const s=document.createElement('span'); s.className='spinner'; els.status.appendChild(s); }
@@ -126,7 +196,6 @@ function setStatus(msg, type='info', loading=false){
   els.status.className=`status ${type}`;
   els.status.classList.remove('hidden');
 }
-
 function updateBias(b){
   const label = b.direction === 'bull' ? 'LONG' : 'SHORT';
   const detail = (b.kind && b.idx !== null) ? ` · last HTF ${b.kind.toUpperCase()} @ bar ${b.idx}` : '';
@@ -135,7 +204,6 @@ function updateBias(b){
   els.biasBar.className = `bias ${b.direction}`;
   els.biasBar.classList.remove('hidden');
 }
-
 function renderSignals(signals, minScore){
   if (!signals.length){
     els.signalsWrap.innerHTML = `<div class="empty-state">No signals above threshold (${minScore}). Try lowering Min Score or increasing Bars.</div>`;
@@ -158,151 +226,634 @@ function renderSignals(signals, minScore){
     </table>`;
 }
 
-function drawPlaceholder(canvas,msg){
-  const ctx=canvas.getContext('2d'), r=canvas.getBoundingClientRect();
-  if (!r.width) return;
-  const dpr=window.devicePixelRatio||1;
-  canvas.width=r.width*dpr; canvas.height=r.height*dpr;
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  ctx.fillStyle='#0b0d10'; ctx.fillRect(0,0,r.width,r.height);
-  ctx.fillStyle='#6b7280'; ctx.font='13px ui-monospace,monospace';
-  ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText(msg, r.width/2, r.height/2);
+// ═══════════════════════════════════════════════════════════════════════════
+// LAYOUT
+// ═══════════════════════════════════════════════════════════════════════════
+function computeLayout(W, H) {
+  const padL = 66, padR = 74, padT = 34, padB = 34;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+
+  const end = state.candles.length - state.offset;
+  const start = Math.max(0, end - state.window);
+  const vis = state.candles.slice(start, end);
+  if (!vis.length) return null;
+
+  let lo = Infinity, hi = -Infinity;
+  for (const c of vis) { if (c.low < lo) lo = c.low; if (c.high > hi) hi = c.high; }
+  for (const z of state.opts.zones) {
+    if (z.startIdx >= end) continue;
+    if (z.bottom < lo) lo = z.bottom;
+    if (z.top > hi) hi = z.top;
+  }
+  for (const f of state.opts.fvgs) {
+    if (f.startIdx >= end) continue;
+    if (f.bottom < lo) lo = f.bottom;
+    if (f.top > hi) hi = f.top;
+  }
+  for (const s of state.opts.signals) {
+    if (s.idx < start || s.idx >= end) continue;
+    lo = Math.min(lo, s.stop, s.entry, s.tp1, s.tp2, s.tp3);
+    hi = Math.max(hi, s.stop, s.entry, s.tp1, s.tp2, s.tp3);
+  }
+  const m = (hi - lo) * 0.05 || 1;
+  hi += m; lo -= m;
+
+  const xOf = i => padL + (i - start) / Math.max(1, end - start) * chartW;
+  const yOf = p => padT + (hi - p) / Math.max(1e-9, hi - lo) * chartH;
+  const idxFromPx = px => start + Math.round((px - padL) / Math.max(1, chartW) * (end - start));
+
+  return { W, H, padL, padR, padT, padB, chartW, chartH, start, end, lo, hi, xOf, yOf, idxFromPx };
 }
 
-function drawDiamond(ctx,x,y,s){ctx.beginPath();ctx.moveTo(x,y-s);ctx.lineTo(x+s,y);ctx.lineTo(x,y+s);ctx.lineTo(x-s,y);ctx.closePath();ctx.fill();}
+// ═══════════════════════════════════════════════════════════════════════════
+// DRAWING PRIMITIVES
+// ═══════════════════════════════════════════════════════════════════════════
+function drawGrid(ctx, L) {
+  ctx.font = '10px ui-monospace, monospace';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'right';
+  for (let i = 0; i <= 6; i++) {
+    const p = L.lo + (L.hi - L.lo) * i / 6;
+    const y = L.yOf(p);
+    ctx.strokeStyle = COL.grid;
+    ctx.beginPath(); ctx.moveTo(L.padL, y); ctx.lineTo(L.W - L.padR, y); ctx.stroke();
+    ctx.fillStyle = COL.dim;
+    ctx.fillText(p.toFixed(2), L.padL - 8, y);
+  }
+  // Time axis
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.font = '9px ui-monospace, monospace';
+  for (let i = 0; i <= 6; i++) {
+    const idx = L.start + Math.floor((L.end - L.start) * i / 6);
+    if (idx >= L.end || idx >= state.candles.length) continue;
+    ctx.fillStyle = COL.dim;
+    ctx.fillText(fmtTsShort(state.candles[idx].ts, state.opts.interval), L.xOf(idx), L.H - L.padB + 6);
+  }
+}
 
-function drawStructMarker(ctx,x,y,kind,dir){
-  if (kind==='bos'){
-    ctx.fillStyle='#eab308'; const d=dir==='bull'?-1:1;
-    ctx.beginPath(); ctx.moveTo(x,y+d*6); ctx.lineTo(x-4,y-d*3); ctx.lineTo(x+4,y-d*3); ctx.closePath(); ctx.fill();
-  } else if (kind==='choch'){ ctx.fillStyle='#eab308'; drawDiamond(ctx,x,y,5); }
-  else if (kind==='mss'){
-    ctx.fillStyle='#d946ef'; ctx.beginPath();
-    for (let i=0;i<10;i++){
-      const a=-Math.PI/2 + i*Math.PI/5, r=i%2===0?6:2.5;
-      const px=x+Math.cos(a)*r, py=y+Math.sin(a)*r;
-      i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
+function drawZones(ctx, L) {
+  for (const z of state.opts.zones) {
+    const x0 = L.xOf(Math.max(L.start, z.startIdx));
+    if (x0 >= L.W - L.padR) continue;
+    const isHover = state.hover?.type === 'zone' && state.hover.data === z;
+    const yT = L.yOf(z.top), yB = L.yOf(z.bottom);
+    ctx.fillStyle = z.side === 'bull'
+      ? (isHover ? 'rgba(34,197,94,0.22)' : 'rgba(34,197,94,0.10)')
+      : (isHover ? 'rgba(239,68,68,0.22)' : 'rgba(239,68,68,0.10)');
+    ctx.fillRect(x0, yT, L.W - L.padR - x0, yB - yT);
+    ctx.strokeStyle = z.side === 'bull'
+      ? (isHover ? 'rgba(34,197,94,0.9)' : 'rgba(34,197,94,0.35)')
+      : (isHover ? 'rgba(239,68,68,0.9)' : 'rgba(239,68,68,0.35)');
+    ctx.lineWidth = isHover ? 1.6 : 1;
+    ctx.strokeRect(x0, yT, L.W - L.padR - x0, yB - yT);
+  }
+}
+
+function drawFvgs(ctx, L) {
+  for (const f of state.opts.fvgs) {
+    const x0 = L.xOf(Math.max(L.start, f.startIdx));
+    if (x0 >= L.W - L.padR) continue;
+    const yT = L.yOf(f.top), yB = L.yOf(f.bottom);
+    ctx.fillStyle = f.side === 'bull' ? 'rgba(59,130,246,0.10)' : 'rgba(168,85,247,0.10)';
+    ctx.fillRect(x0, yT, L.W - L.padR - x0, yB - yT);
+  }
+  for (const iv of state.opts.ifvgs) {
+    const f = iv.fvg;
+    const x0 = L.xOf(Math.max(L.start, f.startIdx));
+    if (x0 >= L.W - L.padR) continue;
+    const yT = L.yOf(f.top), yB = L.yOf(f.bottom);
+    const isHover = state.hover?.type === 'ifvg' && state.hover.data === iv;
+    ctx.fillStyle = isHover ? 'rgba(234,179,8,0.20)' : 'rgba(234,179,8,0.08)';
+    ctx.fillRect(x0, yT, L.W - L.padR - x0, yB - yT);
+  }
+}
+
+function drawCandles(ctx, L) {
+  const total = L.end - L.start;
+  const cwBar = L.chartW / Math.max(1, total);
+  const bw = Math.max(1, cwBar * 0.65);
+
+  const hoverIdx = state.hover?.type === 'candle' ? state.hover.idx : -1;
+
+  for (let i = 0; i < total; i++) {
+    const idx = L.start + i;
+    const c = state.candles[idx];
+    if (!c) continue;
+    const x = L.xOf(idx) + cwBar / 2;
+    const up = c.close >= c.open;
+    const isHover = idx === hoverIdx;
+
+    ctx.strokeStyle = up ? COL.green : COL.red;
+    ctx.fillStyle  = up ? COL.green : COL.red;
+    ctx.lineWidth = isHover ? 2 : 1;
+    ctx.beginPath(); ctx.moveTo(x, L.yOf(c.high)); ctx.lineTo(x, L.yOf(c.low)); ctx.stroke();
+
+    const yO = L.yOf(c.open), yC = L.yOf(c.close);
+    ctx.fillRect(x - bw/2, Math.min(yO, yC), bw, Math.max(1, Math.abs(yC - yO)));
+
+    if (isHover) {
+      ctx.strokeStyle = COL.gold;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(x - bw/2 - 1, Math.min(yO, yC) - 1, bw + 2, Math.max(1, Math.abs(yC - yO)) + 2);
+    }
+  }
+}
+
+function drawStructureMarker(ctx, x, y, kind, dir, hovered) {
+  const s = hovered ? 1.4 : 1;
+  if (kind === 'bos') {
+    ctx.fillStyle = COL.amber;
+    const d = dir === 'bull' ? -1 : 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y + d * 7 * s);
+    ctx.lineTo(x - 5 * s, y - d * 4 * s);
+    ctx.lineTo(x + 5 * s, y - d * 4 * s);
+    ctx.closePath(); ctx.fill();
+  } else if (kind === 'choch') {
+    ctx.fillStyle = COL.amber;
+    diamond(ctx, x, y, 5 * s);
+  } else {
+    ctx.fillStyle = COL.magenta;
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI/2 + i * Math.PI/5;
+      const r = (i % 2 === 0 ? 6 : 2.5) * s;
+      const px = x + Math.cos(a) * r;
+      const py = y + Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
     }
     ctx.closePath(); ctx.fill();
   }
 }
 
-function renderChart(canvas, candles, o){
-  const ctx=canvas.getContext('2d'), r=canvas.getBoundingClientRect();
-  if (!r.width) return;
-  const dpr=window.devicePixelRatio||1;
-  canvas.width=r.width*dpr; canvas.height=r.height*dpr;
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  const W=r.width,H=r.height,padL=62,padR=62,padT=12,padB=28;
-  const cw=W-padL-padR, ch=H-padT-padB;
-  ctx.fillStyle='#0b0d10'; ctx.fillRect(0,0,W,H);
-
-  const end=candles.length, start=Math.max(0,end-o.window);
-  const vis=candles.slice(start,end);
-  if (!vis.length) return;
-
-  let lo=Infinity, hi=-Infinity;
-  for (const c of vis){ if(c.low<lo)lo=c.low; if(c.high>hi)hi=c.high; }
-  for (const z of o.zones){ if(z.bottom<lo)lo=z.bottom; if(z.top>hi)hi=z.top; }
-  for (const f of o.fvgs){ if(f.bottom<lo)lo=f.bottom; if(f.top>hi)hi=f.top; }
-  for (const s of o.signals){
-    if (s.idx<start) continue;
-    lo=Math.min(lo,s.stop,s.entry,s.tp1,s.tp2,s.tp3);
-    hi=Math.max(hi,s.stop,s.entry,s.tp1,s.tp2,s.tp3);
-  }
-  const m=(hi-lo)*0.05||1; hi+=m; lo-=m;
-
-  const xOf=i=>padL+(i-start)/Math.max(1,end-start)*cw;
-  const yOf=p=>padT+(hi-p)/Math.max(1e-9,hi-lo)*ch;
-
-  ctx.font='10px ui-monospace,monospace'; ctx.textBaseline='middle'; ctx.textAlign='right';
-  for (let i=0;i<=6;i++){
-    const p=lo+(hi-lo)*i/6, y=yOf(p);
-    ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(W-padR,y); ctx.stroke();
-    ctx.fillStyle='#6b7280'; ctx.fillText(p.toFixed(2), padL-8, y);
-  }
-
-  for (const z of o.zones){
-    const x0=xOf(Math.max(start,z.startIdx)); if (x0>=W-padR) continue;
-    const yT=yOf(z.top),yB=yOf(z.bottom);
-    ctx.fillStyle = z.side==='bull' ? 'rgba(34,197,94,0.10)' : 'rgba(239,68,68,0.10)';
-    ctx.fillRect(x0,yT,W-padR-x0,yB-yT);
-    ctx.strokeStyle = z.side==='bull' ? 'rgba(34,197,94,0.35)' : 'rgba(239,68,68,0.35)';
-    ctx.lineWidth=1; ctx.strokeRect(x0,yT,W-padR-x0,yB-yT);
-  }
-  for (const f of o.fvgs){
-    const x0=xOf(Math.max(start,f.startIdx)); if (x0>=W-padR) continue;
-    const yT=yOf(f.top),yB=yOf(f.bottom);
-    ctx.fillStyle = f.side==='bull' ? 'rgba(59,130,246,0.10)' : 'rgba(168,85,247,0.10)';
-    ctx.fillRect(x0,yT,W-padR-x0,yB-yT);
-  }
-  for (const iv of o.ifvgs){
-    const f=iv.fvg, x0=xOf(Math.max(start,f.startIdx)); if (x0>=W-padR) continue;
-    const yT=yOf(f.top),yB=yOf(f.bottom);
-    ctx.fillStyle='rgba(234,179,8,0.08)'; ctx.fillRect(x0,yT,W-padR-x0,yB-yT);
-  }
-
-  const cwBar=cw/Math.max(1,vis.length), bw=Math.max(1,cwBar*0.7);
-  for (let i=0;i<vis.length;i++){
-    const c=vis[i], x=xOf(start+i)+cwBar/2, up=c.close>=c.open;
-    ctx.strokeStyle=ctx.fillStyle=up?'#22c55e':'#ef4444';
-    ctx.beginPath(); ctx.moveTo(x,yOf(c.high)); ctx.lineTo(x,yOf(c.low)); ctx.stroke();
-    const yO=yOf(c.open), yC=yOf(c.close);
-    ctx.fillRect(x-bw/2, Math.min(yO,yC), bw, Math.max(1,Math.abs(yC-yO)));
-  }
-
-  for (const ev of o.structures){ if (ev.idx>=start && ev.idx<end) drawStructMarker(ctx, xOf(ev.idx), yOf(ev.level), ev.kind, ev.direction); }
-  for (const sw of o.sweeps){ if (sw.idx>=start && sw.idx<end){ ctx.strokeStyle='#22d3ee'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(xOf(sw.idx), yOf(sw.level), 4, 0, Math.PI*2); ctx.stroke(); } }
-  for (const iv of o.ifvgs){ if (iv.idx>=start && iv.idx<end){ ctx.fillStyle='#d946ef'; drawDiamond(ctx, xOf(iv.idx), yOf(iv.entryPrice), 4); } }
-
-  for (const sig of o.signals){
-    if (sig.idx<start || sig.idx>=end) continue;
-    const x0=xOf(sig.idx), x1=W-padR;
-    ctx.strokeStyle='#22c55e'; ctx.lineWidth=1.4; ctx.setLineDash([]);
-    ctx.beginPath(); ctx.moveTo(x0,yOf(sig.entry)); ctx.lineTo(x1,yOf(sig.entry)); ctx.stroke();
-    ctx.strokeStyle='#ef4444'; ctx.setLineDash([4,3]);
-    ctx.beginPath(); ctx.moveTo(x0,yOf(sig.stop)); ctx.lineTo(x1,yOf(sig.stop)); ctx.stroke();
-    ctx.strokeStyle='#eab308'; ctx.setLineDash([2,4]);
-    for (const tp of [sig.tp1,sig.tp2,sig.tp3]){
-      ctx.beginPath(); ctx.moveTo(x0,yOf(tp)); ctx.lineTo(x1,yOf(tp)); ctx.stroke();
+function drawStructures(ctx, L) {
+  for (const ev of state.opts.structures) {
+    if (ev.idx < L.start || ev.idx >= L.end) continue;
+    const isHover = state.hover?.type === 'marker' && state.hover.data === ev;
+    if (isHover) {
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.beginPath(); ctx.arc(L.xOf(ev.idx), L.yOf(ev.level), 10, 0, Math.PI*2); ctx.fill();
     }
-    ctx.setLineDash([]);
-    ctx.font='bold 9px ui-monospace,monospace'; ctx.textAlign='left'; ctx.textBaseline='middle';
-    const lx=W-padR+3;
-    ctx.fillStyle='#22c55e'; ctx.fillText('E',  lx, yOf(sig.entry));
-    ctx.fillStyle='#ef4444'; ctx.fillText('SL', lx, yOf(sig.stop));
-    ctx.fillStyle='#eab308'; ctx.fillText('T1', lx, yOf(sig.tp1)); ctx.fillText('T2', lx, yOf(sig.tp2));
-    ctx.fillStyle='#d97706'; ctx.fillText('T3', lx, yOf(sig.tp3));
-  }
-
-  const lastPrice=candles[candles.length-1].close, yLast=yOf(lastPrice);
-  ctx.strokeStyle='rgba(255,255,255,0.65)'; ctx.setLineDash([2,3]);
-  ctx.beginPath(); ctx.moveTo(padL,yLast); ctx.lineTo(W-padR,yLast); ctx.stroke(); ctx.setLineDash([]);
-  const bW=56,bH=16;
-  ctx.fillStyle='#ffffff'; ctx.fillRect(W-padR+2, yLast-bH/2, bW, bH);
-  ctx.fillStyle='#0b0d10'; ctx.font='bold 10px ui-monospace,monospace';
-  ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText(lastPrice.toFixed(2), W-padR+2+bW/2, yLast);
-
-  ctx.fillStyle='#6b7280'; ctx.font='9px ui-monospace,monospace';
-  ctx.textAlign='center'; ctx.textBaseline='top';
-  for (let i=0;i<=6;i++){
-    const idx=start+Math.floor((end-start)*i/6); if (idx>=end) continue;
-    const d=new Date(candles[idx].ts*1000);
-    const isD = o.interval==='1day';
-    const label = isD ? `${d.getUTCMonth()+1}/${d.getUTCDate()}`
-                      : `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
-    ctx.fillText(label, xOf(idx), H-padB+4);
+    drawStructureMarker(ctx, L.xOf(ev.idx), L.yOf(ev.level), ev.kind, ev.direction, isHover);
   }
 }
 
-let lastData=null;
+function drawSweeps(ctx, L) {
+  for (const sw of state.opts.sweeps) {
+    if (sw.idx < L.start || sw.idx >= L.end) continue;
+    const isHover = state.hover?.type === 'sweep' && state.hover.data === sw;
+    ctx.strokeStyle = COL.cyan;
+    ctx.lineWidth = isHover ? 2.2 : 1.5;
+    ctx.beginPath(); ctx.arc(L.xOf(sw.idx), L.yOf(sw.level), isHover ? 7 : 4, 0, Math.PI*2); ctx.stroke();
+    if (isHover) {
+      ctx.fillStyle = 'rgba(34,211,238,0.25)';
+      ctx.fill();
+    }
+  }
+}
 
+function drawIfvgMarkers(ctx, L) {
+  for (const iv of state.opts.ifvgs) {
+    if (iv.idx < L.start || iv.idx >= L.end) continue;
+    const isHover = state.hover?.type === 'ifvg' && state.hover.data === iv;
+    ctx.fillStyle = COL.magenta;
+    diamond(ctx, L.xOf(iv.idx), L.yOf(iv.entryPrice), isHover ? 7 : 4.5);
+  }
+}
+
+function drawSignalLines(ctx, L) {
+  for (const sig of state.opts.signals) {
+    if (sig.idx < L.start || sig.idx >= L.end) continue;
+    const isHover = state.hover?.type === 'signal' && state.hover.data === sig;
+    const x0 = L.xOf(sig.idx), x1 = L.W - L.padR;
+
+    // entry
+    ctx.strokeStyle = COL.green;
+    ctx.lineWidth = isHover ? 2.2 : 1.4;
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(x0, L.yOf(sig.entry)); ctx.lineTo(x1, L.yOf(sig.entry)); ctx.stroke();
+
+    // stop
+    ctx.strokeStyle = COL.red;
+    ctx.lineWidth = isHover ? 2 : 1.2;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(x0, L.yOf(sig.stop)); ctx.lineTo(x1, L.yOf(sig.stop)); ctx.stroke();
+
+    // TPs
+    ctx.strokeStyle = COL.amber;
+    ctx.lineWidth = isHover ? 1.8 : 1.1;
+    ctx.setLineDash([2, 4]);
+    for (const tp of [sig.tp1, sig.tp2, sig.tp3]) {
+      ctx.beginPath(); ctx.moveTo(x0, L.yOf(tp)); ctx.lineTo(x1, L.yOf(tp)); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    // Right-edge labels
+    ctx.font = 'bold 9px ui-monospace, monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    const lx = L.W - L.padR + 3;
+    ctx.fillStyle = COL.green; ctx.fillText('E',  lx, L.yOf(sig.entry));
+    ctx.fillStyle = COL.red;   ctx.fillText('SL', lx, L.yOf(sig.stop));
+    ctx.fillStyle = COL.amber; ctx.fillText('T1', lx, L.yOf(sig.tp1));
+                               ctx.fillText('T2', lx, L.yOf(sig.tp2));
+    ctx.fillStyle = '#d97706'; ctx.fillText('T3', lx, L.yOf(sig.tp3));
+
+    // Signal bar marker
+    ctx.fillStyle = sig.side === 'bull' ? COL.green : COL.red;
+    ctx.beginPath();
+    const markerY = L.yOf(sig.entry);
+    if (sig.side === 'bull') {
+      ctx.moveTo(x0 - 4, markerY - 4); ctx.lineTo(x0 + 4, markerY - 4); ctx.lineTo(x0, markerY + 3);
+    } else {
+      ctx.moveTo(x0 - 4, markerY + 4); ctx.lineTo(x0 + 4, markerY + 4); ctx.lineTo(x0, markerY - 3);
+    }
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+function drawCurrentPrice(ctx, L) {
+  const lastPrice = state.candles[state.candles.length - 1].close;
+  if (lastPrice < L.lo || lastPrice > L.hi) return;
+  const yLast = L.yOf(lastPrice);
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+  ctx.setLineDash([2, 3]);
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(L.padL, yLast); ctx.lineTo(L.W - L.padR, yLast); ctx.stroke();
+  ctx.setLineDash([]);
+
+  const bW = 58, bH = 16;
+  ctx.fillStyle = COL.white;
+  ctx.fillRect(L.W - L.padR + 2, yLast - bH/2, bW, bH);
+  ctx.fillStyle = COL.bg;
+  ctx.font = 'bold 10px ui-monospace, monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(lastPrice.toFixed(2), L.W - L.padR + 2 + bW/2, yLast);
+}
+
+function drawCrosshair(ctx, L) {
+  if (!state.mouse.active) return;
+  const { x, y } = state.mouse;
+  if (x < L.padL || x > L.W - L.padR || y < L.padT || y > L.H - L.padB) return;
+
+  // Dotted crosshair
+  ctx.strokeStyle = 'rgba(212,175,55,0.35)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 3]);
+  ctx.beginPath();
+  ctx.moveTo(x, L.padT);
+  ctx.lineTo(x, L.H - L.padB);
+  ctx.moveTo(L.padL, y);
+  ctx.lineTo(L.W - L.padR, y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Price label on right axis
+  const price = L.hi - (y - L.padT) / L.chartH * (L.hi - L.lo);
+  const ptxt = price.toFixed(2);
+  ctx.font = 'bold 10px ui-monospace, monospace';
+  const pw = ctx.measureText(ptxt).width + 12;
+  ctx.fillStyle = '#1a1d23';
+  ctx.fillRect(L.W - L.padR + 2, y - 9, pw, 18);
+  ctx.strokeStyle = 'rgba(212,175,55,0.6)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(L.W - L.padR + 2, y - 9, pw, 18);
+  ctx.fillStyle = COL.gold;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(ptxt, L.W - L.padR + 8, y);
+
+  // Time label on bottom axis
+  const idx = L.idxFromPx(x);
+  if (idx >= 0 && idx < state.candles.length) {
+    const tt = fmtTsShort(state.candles[idx].ts, state.opts.interval);
+    const tw = ctx.measureText(tt).width + 12;
+    ctx.fillStyle = '#1a1d23';
+    ctx.fillRect(x - tw/2, L.H - L.padB + 4, tw, 14);
+    ctx.strokeStyle = 'rgba(212,175,55,0.6)';
+    ctx.strokeRect(x - tw/2, L.H - L.padB + 4, tw, 14);
+    ctx.fillStyle = COL.gold;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(tt, x, L.H - L.padB + 11);
+  }
+}
+
+function diamond(ctx, x, y, s) {
+  ctx.beginPath();
+  ctx.moveTo(x, y - s); ctx.lineTo(x + s, y);
+  ctx.lineTo(x, y + s); ctx.lineTo(x - s, y);
+  ctx.closePath(); ctx.fill();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MAIN RENDER
+// ═══════════════════════════════════════════════════════════════════════════
+function redraw() {
+  const canvas = els.chart;
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width) return;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  ctx.fillStyle = COL.bg;
+  ctx.fillRect(0, 0, rect.width, rect.height);
+
+  if (!state.candles.length || !state.opts) {
+    ctx.fillStyle = COL.dim;
+    ctx.font = '13px ui-monospace, monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Click Fetch & Analyze to start', rect.width / 2, rect.height / 2);
+    return;
+  }
+
+  const L = computeLayout(rect.width, rect.height);
+  if (!L) return;
+  state.layout = L;
+
+  drawGrid(ctx, L);
+  drawZones(ctx, L);
+  drawFvgs(ctx, L);
+  drawCandles(ctx, L);
+  drawStructures(ctx, L);
+  drawSweeps(ctx, L);
+  drawIfvgMarkers(ctx, L);
+  drawSignalLines(ctx, L);
+  drawCurrentPrice(ctx, L);
+  drawCrosshair(ctx, L);
+
+  // Info bar
+  const st = state.candles[L.start]?.ts;
+  const en = state.candles[L.end - 1]?.ts;
+  const range = (st && en) ? `${fmtTsShort(st, state.opts.interval)} → ${fmtTsShort(en, state.opts.interval)}` : '';
+  els.chartRange.textContent = `${L.end - L.start} of ${state.candles.length} candles · ${range}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HIT TESTING
+// ═══════════════════════════════════════════════════════════════════════════
+function hitTest(mx, my) {
+  const L = state.layout;
+  if (!L) return null;
+  if (mx < L.padL || mx > L.W - L.padR || my < L.padT || my > L.H - L.padB) return null;
+
+  // 1. Signal lines
+  for (const sig of state.opts.signals) {
+    if (sig.idx < L.start || sig.idx >= L.end) continue;
+    if (mx < L.xOf(sig.idx)) continue;
+    const lines = [sig.entry, sig.stop, sig.tp1, sig.tp2, sig.tp3];
+    for (const p of lines) {
+      if (Math.abs(my - L.yOf(p)) < 6) return { type: 'signal', data: sig };
+    }
+  }
+
+  // 2. Markers
+  for (const ev of state.opts.structures) {
+    if (ev.idx < L.start || ev.idx >= L.end) continue;
+    const d = Math.hypot(mx - L.xOf(ev.idx), my - L.yOf(ev.level));
+    if (d < 10) return { type: 'marker', kind: ev.kind, data: ev };
+  }
+  for (const sw of state.opts.sweeps) {
+    if (sw.idx < L.start || sw.idx >= L.end) continue;
+    const d = Math.hypot(mx - L.xOf(sw.idx), my - L.yOf(sw.level));
+    if (d < 9) return { type: 'sweep', data: sw };
+  }
+  for (const iv of state.opts.ifvgs) {
+    if (iv.idx < L.start || iv.idx >= L.end) continue;
+    const d = Math.hypot(mx - L.xOf(iv.idx), my - L.yOf(iv.entryPrice));
+    if (d < 9) return { type: 'ifvg', data: iv };
+  }
+
+  // 3. Zones
+  for (const z of state.opts.zones) {
+    const x0 = L.xOf(Math.max(L.start, z.startIdx));
+    if (x0 >= L.W - L.padR) continue;
+    if (mx < x0) continue;
+    const yT = L.yOf(z.top), yB = L.yOf(z.bottom);
+    if (my >= Math.min(yT, yB) && my <= Math.max(yT, yB)) {
+      return { type: 'zone', data: z };
+    }
+  }
+
+  // 4. Candle
+  const idx = L.idxFromPx(mx);
+  if (idx >= L.start && idx < L.end && idx < state.candles.length) {
+    return { type: 'candle', data: state.candles[idx], idx };
+  }
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOOLTIP
+// ═══════════════════════════════════════════════════════════════════════════
+function buildTooltipHtml(h) {
+  if (!h) return '';
+  const iv = state.opts.interval;
+
+  switch (h.type) {
+    case 'candle': {
+      const c = h.data;
+      const up = c.close >= c.open;
+      const chg = ((c.close - c.open) / c.open * 100).toFixed(2);
+      const cls = up ? 'bull' : 'bear';
+      return `
+        <div class="tt-header">${fmtTsFull(c.ts, iv)}</div>
+        <div class="tt-grid">
+          <span class="tt-label">Open</span><span class="tt-val ${cls}">${c.open.toFixed(2)}</span>
+          <span class="tt-label">High</span><span class="tt-val ${cls}">${c.high.toFixed(2)}</span>
+          <span class="tt-label">Low</span><span class="tt-val ${cls}">${c.low.toFixed(2)}</span>
+          <span class="tt-label">Close</span><span class="tt-val ${cls}">${c.close.toFixed(2)}</span>
+          <span class="tt-label">Change</span><span class="tt-val ${cls}">${up?'+':''}${chg}%</span>
+          <span class="tt-label">Bar</span><span class="tt-val">#${h.idx}</span>
+        </div>`;
+    }
+    case 'marker': {
+      const ev = h.data;
+      const kind = h.kind.toUpperCase();
+      const dir = ev.direction === 'bull' ? 'BULLISH' : 'BEARISH';
+      const cls = ev.direction === 'bull' ? 'bull' : 'bear';
+      return `
+        <div class="tt-header">${kind} · ${dir}</div>
+        <div class="tt-grid">
+          <span class="tt-label">Level</span><span class="tt-val ${cls}">${ev.level.toFixed(2)}</span>
+          <span class="tt-label">Bar</span><span class="tt-val">#${ev.idx}</span>
+          <span class="tt-label">Time</span><span class="tt-val">${fmtTsFull(state.candles[ev.idx].ts, iv)}</span>
+        </div>`;
+    }
+    case 'sweep': {
+      const sw = h.data;
+      const dir = sw.direction === 'bull' ? 'BULLISH' : 'BEARISH';
+      const cls = sw.direction === 'bull' ? 'bull' : 'bear';
+      return `
+        <div class="tt-header">Liquidity Sweep · ${dir}</div>
+        <div class="tt-grid">
+          <span class="tt-label">Level</span><span class="tt-val ${cls}">${sw.level.toFixed(2)}</span>
+          <span class="tt-label">Bar</span><span class="tt-val">#${sw.idx}</span>
+          <span class="tt-label">Time</span><span class="tt-val">${fmtTsFull(state.candles[sw.idx].ts, iv)}</span>
+        </div>`;
+    }
+    case 'ifvg': {
+      const ivg = h.data;
+      const dir = ivg.side === 'bull' ? 'BULLISH' : 'BEARISH';
+      const cls = ivg.side === 'bull' ? 'bull' : 'bear';
+      return `
+        <div class="tt-header">Inverse FVG · ${dir}</div>
+        <div class="tt-grid">
+          <span class="tt-label">Entry</span><span class="tt-val ${cls}">${ivg.entryPrice.toFixed(2)}</span>
+          <span class="tt-label">Gap top</span><span class="tt-val">${ivg.fvg.top.toFixed(2)}</span>
+          <span class="tt-label">Gap bottom</span><span class="tt-val">${ivg.fvg.bottom.toFixed(2)}</span>
+          <span class="tt-label">Time</span><span class="tt-val">${fmtTsFull(state.candles[ivg.idx].ts, iv)}</span>
+        </div>`;
+    }
+    case 'zone': {
+      const z = h.data;
+      const cls = z.side === 'bull' ? 'bull' : 'bear';
+      const height = (z.top - z.bottom).toFixed(2);
+      return `
+        <div class="tt-header">${z.label} Zone</div>
+        <div class="tt-grid">
+          <span class="tt-label">Top</span><span class="tt-val ${cls}">${z.top.toFixed(2)}</span>
+          <span class="tt-label">Bottom</span><span class="tt-val ${cls}">${z.bottom.toFixed(2)}</span>
+          <span class="tt-label">Height</span><span class="tt-val">${height}</span>
+          <span class="tt-label">Start</span><span class="tt-val">${fmtTsFull(state.candles[z.startIdx].ts, iv)}</span>
+        </div>`;
+    }
+    case 'signal': {
+      const s = h.data;
+      const cls = s.side === 'bull' ? 'bull' : 'bear';
+      const risk = Math.abs(s.entry - s.stop);
+      const rr1 = risk > 0 ? (Math.abs(s.tp1 - s.entry) / risk).toFixed(1) : '—';
+      return `
+        <div class="tt-header">${s.strategy}</div>
+        <div class="tt-grid">
+          <span class="tt-label">Side</span><span class="tt-val ${cls}">${s.side==='bull'?'LONG':'SHORT'}</span>
+          <span class="tt-label">Entry</span><span class="tt-val">${s.entry.toFixed(2)}</span>
+          <span class="tt-label">Stop</span><span class="tt-val bear">${s.stop.toFixed(2)}</span>
+          <span class="tt-label">TP1</span><span class="tt-val">${s.tp1.toFixed(2)} <span class="tt-dim">(${rr1}R)</span></span>
+          <span class="tt-label">TP2</span><span class="tt-val">${s.tp2.toFixed(2)}</span>
+          <span class="tt-label">TP3</span><span class="tt-val">${s.tp3.toFixed(2)}</span>
+          <span class="tt-label">Score</span><span class="tt-val gold">${s.score}/12</span>
+        </div>
+        <div class="tt-pills">${s.reasons.map(r=>`<span class="pill">${r}</span>`).join('')}</div>`;
+    }
+  }
+  return '';
+}
+
+function positionTooltip(mx, my) {
+  const tip = els.tooltip;
+  const wrap = els.chartWrap.getBoundingClientRect();
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  let tx = mx + 16, ty = my + 16;
+  if (tx + tw > wrap.width - 8) tx = mx - tw - 16;
+  if (ty + th > wrap.height - 8) ty = my - th - 16;
+  tx = Math.max(8, tx); ty = Math.max(8, ty);
+  tip.style.left = `${tx}px`;
+  tip.style.top  = `${ty}px`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INTERACTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+els.chart.addEventListener('mousemove', e => {
+  const rect = els.chart.getBoundingClientRect();
+  state.mouse = { x: e.clientX - rect.left, y: e.clientY - rect.top, active: true };
+
+  if (state.drag) {
+    const barsPerPx = (state.layout ? (state.layout.end - state.layout.start) / state.layout.chartW : 0);
+    const dx = e.clientX - state.drag.x;
+    const wanted = state.drag.offset + dx * barsPerPx;
+    const maxOff = Math.max(0, state.candles.length - state.window);
+    state.offset = Math.round(Math.max(0, Math.min(maxOff, wanted)));
+    redraw();
+    return;
+  }
+
+  const hit = hitTest(state.mouse.x, state.mouse.y);
+  state.hover = hit;
+
+  if (hit) {
+    els.tooltip.innerHTML = buildTooltipHtml(hit);
+    els.tooltip.classList.remove('hidden');
+    positionTooltip(state.mouse.x, state.mouse.y);
+    els.chart.style.cursor = hit.type === 'signal' ? 'pointer' : 'crosshair';
+  } else {
+    els.tooltip.classList.add('hidden');
+    els.chart.style.cursor = 'crosshair';
+  }
+  redraw();
+});
+
+els.chart.addEventListener('mouseleave', () => {
+  state.mouse.active = false;
+  state.hover = null;
+  state.drag = null;
+  els.tooltip.classList.add('hidden');
+  els.chart.style.cursor = 'crosshair';
+  redraw();
+});
+
+els.chart.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  state.drag = { x: e.clientX, offset: state.offset };
+  els.chart.style.cursor = 'grabbing';
+});
+
+window.addEventListener('mouseup', () => {
+  if (state.drag) {
+    state.drag = null;
+    els.chart.style.cursor = 'crosshair';
+  }
+});
+
+els.chart.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = els.chart.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const L = state.layout;
+  if (!L) return;
+
+  const dir = e.deltaY < 0 ? 1 : -1;
+  const oldWindow = state.window;
+  const newWindow = dir > 0
+    ? Math.min(500, Math.round(oldWindow * 1.25))
+    : Math.max(20, Math.round(oldWindow / 1.25));
+  if (newWindow === oldWindow) return;
+
+  const idxUnderCursor = L.idxFromPx(mx);
+  const relPos = (idxUnderCursor - L.start) / Math.max(1, L.end - L.start);
+  const newStart = Math.max(0, Math.round(idxUnderCursor - relPos * newWindow));
+  const newEnd = Math.min(state.candles.length, newStart + newWindow);
+  state.window = newWindow;
+  state.offset = Math.max(0, state.candles.length - newEnd);
+  state.opts.defaultWindow = state.window;
+  redraw();
+}, { passive: false });
+
+els.chart.addEventListener('dblclick', () => {
+  state.window = state.opts?.defaultWindow || 100;
+  state.offset = 0;
+  redraw();
+});
+
+els.resetBtn.addEventListener('click', () => {
+  state.window = state.opts?.defaultWindow || 100;
+  state.offset = 0;
+  redraw();
+});
+
+const ro = new ResizeObserver(() => redraw());
+ro.observe(els.chart);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FETCH + RUN
+// ═══════════════════════════════════════════════════════════════════════════
 async function runAnalysis(){
   const interval   = els.interval.value;
   const outputsize = Math.max(100, parseInt(els.outputsize.value,10)||500);
-  const window     = Math.max(20,  parseInt(els.window.value,10)||100);
+  const windowVal  = Math.max(20,  parseInt(els.window.value,10)||100);
   const htfRatio   = Math.max(2,   parseInt(els.htfRatio.value,10)||5);
   const minScore   = Math.max(0,   parseInt(els.minScore.value,10)||6);
 
@@ -316,26 +867,31 @@ async function runAnalysis(){
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
 
-    const chartOpts = {
-      window, interval,
-      zones:     data.zones,
-      fvgs:      data.fvgs,
-      ifvgs:     data.ifvgs,
-      structures:data.structures,
-      sweeps:    data.sweeps,
-      signals:   data.signals,
+    state.candles = data.candles;
+    state.window  = windowVal;
+    state.offset  = 0;
+    state.opts = {
+      interval,
+      defaultWindow: windowVal,
+      zones:      data.zones,
+      fvgs:       data.fvgs,
+      ifvgs:      data.ifvgs,
+      structures: data.structures,
+      sweeps:     data.sweeps,
+      signals:    data.signals,
     };
-    lastData = { candles: data.candles, opts: chartOpts };
+    state.hover = null;
+    state.mouse = { x: -1, y: -1, active: false };
 
-    renderChart(els.chart, data.candles, chartOpts);
+    redraw();
     updateBias(data.bias);
     renderSignals(data.signals, minScore);
 
-    setStatus(`✔ Done — ${data.signals.length} signal${data.signals.length===1?'':'s'} found on ${data.symbol} ${data.interval}.`, 'success');
+    setStatus(`✔ Done — ${data.signals.length} signal${data.signals.length===1?'':'s'} on ${data.symbol} ${data.interval}. Hover the chart to inspect.`, 'success');
   } catch (e){
     console.error(e);
     if (e instanceof TypeError && String(e.message).includes('fetch')) {
-      setStatus('✖ Cannot reach the Aurum server. Run `cargo run -- serve` and open http://localhost:3000', 'error');
+      setStatus('✖ Cannot reach the Aurum server. Run `cargo run --bin aurum-web` and open http://localhost:3000', 'error');
     } else {
       setStatus(`✖ ${e.message || e}`, 'error');
     }
@@ -345,12 +901,7 @@ async function runAnalysis(){
 }
 
 els.fetchBtn.addEventListener('click', runAnalysis);
-
-requestAnimationFrame(()=>drawPlaceholder(els.chart,'Click Fetch & Analyze to start'));
-new ResizeObserver(()=>{
-  if (lastData) renderChart(els.chart, lastData.candles, lastData.opts);
-  else drawPlaceholder(els.chart,'Click Fetch & Analyze to start');
-}).observe(els.chart);
+requestAnimationFrame(() => redraw());
 </script>
 </body>
 </html>
