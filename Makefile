@@ -6,7 +6,7 @@ PORT    ?= 3000
 .PHONY: help setup build release tui web web-headless clean check fmt lint
 
 help: ## Show this help
-	@echo "aurum-tui  · terminal scanner"
+	@echo "aurum-gui  · graphical user interface"
 	@echo "aurum-web  · web UI on http://127.0.0.1:$(PORT) (auto-opens browser)"
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -22,10 +22,10 @@ build: ## Debug build (both binaries)
 
 release: ## Optimized build (both binaries)
 	$(CARGO) build --release
-	@echo "✔ binaries: target/release/aurum-tui  and  target/release/aurum-web"
+	@echo "✔ binaries: target/release/aurum-gui  and  target/release/aurum-web"
 
-tui: $(ENV) ## Run the terminal scanner
-	$(CARGO) run --release --bin aurum-tui
+gui: $(ENV) ## Run the terminal scanner
+	$(CARGO) run --release --bin aurum-gui
 
 web: $(ENV) ## Run the web UI (auto-opens browser)
 	$(CARGO) run --release --bin aurum-web -- --port $(PORT)
