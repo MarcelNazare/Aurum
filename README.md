@@ -1,8 +1,8 @@
 # Aurum · XAU/USD ICT Scanner
 
-![Aurum Terminal Preview](assets/aurum-snapshot.png)
-
 > A gold scanner that detects Smart Money Concepts (ICT) setups in real time — available as a **terminal (TUI)** app and a **local web UI**, both powered by the same Rust engine.
+
+![Aurum Terminal Preview](assets/aurum-snapshot.png)
 
 **Aurum** (Latin for *gold*) analyses live **XAU/USD** candles from [Twelve Data](https://twelvedata.com) and surfaces high-confluence trade setups using three independent strategy engines, each scored by a confluence model before being displayed.
 
@@ -47,6 +47,7 @@ Ships as **two binaries** sharing one codebase:
 - [Configuration](#configuration)
 - [Usage — terminal mode](#usage--terminal-mode)
 - [Usage — web mode](#usage--web-mode)
+- [Interactive chart](#interactive-chart)
 - [Architecture](#architecture)
 - [Strategies](#strategies)
 - [Reading the chart](#reading-the-chart)
@@ -69,7 +70,9 @@ Ships as **two binaries** sharing one codebase:
 - **Confluence scoring** (0–12) with reasoning — low-quality setups filtered out
 - **Two frontends, one engine**:
   - `aurum-tui` — full ASCII chart directly in your terminal
-  - `aurum-web` — local web UI (canvas chart) served by the Rust process
+  - `aurum-web` — local web UI with an **interactive canvas chart**
+- **Interactive web chart** — hover any candle, marker, zone, or signal line for full details; scroll to zoom; drag to pan
+- **Auto-launches your browser** — `aurum-web` opens `http://127.0.0.1:3000/` automatically (`--no-open` to disable)
 - **Same detection everywhere** — the web UI never re-implements strategies; it renders the Rust engine's JSON
 - **API key never leaves the machine** — even in web mode the key lives in `.env` on the server, not in the browser
 - **Multi-target exits** — TP1 (1R), TP2 (2R), TP3 (structure-based)
@@ -201,25 +204,41 @@ make tui
 ## Usage — web mode
 
 ```bash
-# start the local server
+# start the local server — opens the browser automatically
 ./target/release/aurum-web
 # → ✔ Aurum web UI: http://127.0.0.1:3000/
+# → ✔ opened http://127.0.0.1:3000/ in your default browser
 
 # custom port
 ./target/release/aurum-web --port 8080
 
+# headless: no browser, just the server
+./target/release/aurum-web --no-open
+
 # via make
 make web PORT=8080
+make web-headless PORT=3000
 ```
 
-Open the printed URL in your browser. The page shows:
+### Auto-launch behaviour
 
-- **Bias bar** — current HTF direction with the last structural event
-- **Canvas chart** — candles, supply/demand zones, FVGs, IFVGs, BOS / ChoCh / MSS, sweeps, and entry/SL/TP bands
-- **Signals table** — one row per setup with reasons as inline pills
-- **Controls** — interval, bars, window, HTF ratio, min score
+`aurum-web` spawns a background task that calls `webbrowser::open()` ~250 ms after the server starts listening. That means your browser tab doesn't flash "site can't be reached" — the first request goes through immediately.
 
-All analysis runs on the Rust server. The browser just calls `GET /api/analyze` and renders JSON. **Your API key is never sent to the browser.**
+Behaviour by environment:
+
+| Environment | Result |
+|---|---|
+| Desktop (Windows / macOS / Linux GUI) | Default browser opens the URL |
+| SSH / headless / container | Prints a warning, server still runs — open the URL manually |
+| `BROWSER=firefox` set | Uses that browser |
+| `BROWSER=none` set | Same as `--no-open` |
+| `--no-open` flag | Never launches, always prints the URL |
+
+If the port is already taken, `aurum-web` prints a clear message instead of a raw `io::Error`:
+
+```
+✖ could not bind 127.0.0.1:3000: Address already in use (os error 98) — is another instance running?
+```
 
 ### Web UI safety notes
 
@@ -227,6 +246,46 @@ All analysis runs on the Rust server. The browser just calls `GET /api/analyze` 
 - No authentication — do not expose to a public network without a reverse proxy
 - No telemetry, no analytics, no CDN calls
 - `index.html` is embedded into the binary at compile time (`include_str!`) — one file, zero deployment friction
+
+---
+
+## Interactive chart
+
+The web chart is fully interactive. No plugins, no libraries — pure canvas + vanilla JS.
+
+### Mouse controls
+
+| Gesture | Action |
+|---|---|
+| **Hover anywhere on the chart** | Crosshair follows the cursor, gold price label on right axis, time label on bottom axis |
+| **Hover a candle** | Tooltip with open/high/low/close, change %, timestamp, bar index |
+| **Hover a BOS / ChoCh / MSS marker** | Tooltip with type, direction, level, timestamp — marker brightens |
+| **Hover a sweep** | Tooltip with swept level, direction, timestamp |
+| **Hover an IFVG marker** | Tooltip with entry price, gap bounds, timestamp |
+| **Hover a supply/demand zone** | Tooltip with top, bottom, height, start time — zone brightens |
+| **Hover an entry / SL / TP line** | Full signal tooltip: strategy, side, all prices, R-multiple, score, reasons |
+| **Scroll wheel** | Zoom in / out anchored at the cursor (20–500 bars) |
+| **Click and drag** | Pan back and forth through history |
+| **Double-click** | Reset to the default window |
+| **Reset view button** | Same as double-click |
+
+### Visual feedback
+
+- Hovered markers get a soft glow and slightly larger size
+- Hovered candles get a gold outline
+- Hovered zones brighten
+- Hovered signal lines thicken
+- Tooltip auto-flips near the right/bottom edge so it never gets clipped
+- Live info bar above the chart: `100 of 500 candles · 14:30 → 18:45`
+
+### Rendering layers (bottom to top)
+
+```
+grid + axes  →  supply/demand zones  →  FVGs + IFVGs  →  candles
+    →  structure markers  →  sweep circles  →  IFVG diamonds
+    →  signal lines (entry/SL/TP1-3)  →  current-price badge
+    →  crosshair + axis labels
+```
 
 ---
 
@@ -239,6 +298,7 @@ All analysis runs on the Rust server. The browser just calls `GET /api/analyze` 
 │  ─────────────────            ──────────────────             │
 │  Chart renderer               axum HTTP server               │
 │  (ASCII, ANSI colors)         (GET /, GET /api/analyze)      │
+│                               + auto-launch via webbrowser   │
 │         │                              │                     │
 │         └──────────────┬───────────────┘                     │
 │                        ▼                                     │
@@ -383,6 +443,8 @@ Inside `lib.rs`, sections are delimited by boxed comments:
 
 The terminal chart lives in `src/bin/aurum-tui.rs` (it's not needed elsewhere). The server and embedded HTML live in `src/server.rs` / `index.html`.
 
+> **Note:** there is no `src/main.rs`. If one exists on disk, Cargo will try to build it as a third binary named after the package — delete it if you migrated from the single-binary layout.
+
 ---
 
 ## Development
@@ -396,7 +458,8 @@ The included `Makefile` wraps common commands:
 | `make build` | Debug build (both binaries) |
 | `make release` | Optimized build → `target/release/aurum-{tui,web}` |
 | `make tui` | Run the terminal scanner |
-| `make web PORT=3000` | Run the web UI |
+| `make web PORT=3000` | Run the web UI (auto-opens browser) |
+| `make web-headless PORT=3000` | Run the web UI without opening a browser |
 | `make check` | Type-check all targets |
 | `make fmt` | `cargo fmt` |
 | `make lint` | `cargo clippy --all-targets -- -D warnings` |
@@ -440,12 +503,32 @@ cargo build --release --bin aurum-web                         # with axum
 
 ## Troubleshooting
 
+### `this function takes 4 arguments but 3 arguments were supplied`
+
+A stale `src/main.rs` still exists from the pre-split single-binary layout. Cargo auto-discovers it as a third binary named after the package and compiles it against the new 4-argument `server::run`.
+
+Fix:
+
+```powershell
+# Windows
+Remove-Item .\src\main.rs
+
+# macOS / Linux
+rm src/main.rs
+```
+
+Verify no `main.rs` remains under `src/`:
+
+```powershell
+Get-ChildItem -Recurse -Filter main.rs .\src
+# should print nothing
+```
+
 ### `can't find bin aurum-tui at path src/bin/aurum-tui.rs`
 
 Cargo can't find a binary. Confirm:
 
 ```powershell
-# Windows
 Get-ChildItem -Recurse -Depth 2 -Include *.rs, *.toml
 ```
 
@@ -489,7 +572,7 @@ The Rust process isn't running, or the port changed. Confirm:
 
 ```bash
 # is aurum-web running?
-./target/release/aurum-web --port 3000
+./target/release/aurum-web --no-open
 
 # is the port open?
 curl http://127.0.0.1:3000/api/analyze?interval=15min
@@ -497,9 +580,18 @@ curl http://127.0.0.1:3000/api/analyze?interval=15min
 
 If the process is running, check that you opened `http://127.0.0.1:<port>/` — not `https://` and not a different port.
 
-### Web UI shows an error in the status bar
+### Browser doesn't open automatically
 
-The Rust server forwards Twelve Data's error text verbatim. Common cases match the API table above. Open DevTools → Network → `/api/analyze` to inspect the raw JSON response.
+Common causes:
+
+| Cause | Fix |
+|---|---|
+| Headless / SSH session | Use `--no-open` and open the printed URL manually |
+| No default browser set | Set `BROWSER=firefox` (or `chrome`, `safari`) in your shell |
+| `BROWSER=none` in environment | Unset it or pass `--no-open` and open manually |
+| Firewall prompt on Windows | Allow the local connection when Windows asks |
+
+The server always prints the URL, so you can copy-paste it even if auto-launch fails.
 
 ### Port already in use
 
@@ -513,6 +605,10 @@ lsof -ti:3000 | xargs kill
 # Windows PowerShell:
 Get-NetTCPConnection -LocalPort 3000 | Select-Object OwningProcess | Stop-Process
 ```
+
+### Web UI shows an error in the status bar
+
+The Rust server forwards Twelve Data's error text verbatim. Common cases match the API table above. Open DevTools → Network → `/api/analyze` to inspect the raw JSON response.
 
 ---
 
