@@ -3,10 +3,10 @@ ENV     := .env
 ENV_EX  := .env.example
 PORT    ?= 3000
 
-.PHONY: help setup build release tui web web-headless clean check fmt lint
+.PHONY: help setup build release gui web web-headless clean check fmt lint
 
 help: ## Show this help
-	@echo "aurum-gui  · graphical user interface"
+	@echo "aurum-gui  · native desktop app"
 	@echo "aurum-web  · web UI on http://127.0.0.1:$(PORT) (auto-opens browser)"
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -24,7 +24,7 @@ release: ## Optimized build (both binaries)
 	$(CARGO) build --release
 	@echo "✔ binaries: target/release/aurum-gui  and  target/release/aurum-web"
 
-gui: $(ENV) ## Run the terminal scanner
+gui: $(ENV) ## Run the native desktop GUI
 	$(CARGO) run --release --bin aurum-gui
 
 web: $(ENV) ## Run the web UI (auto-opens browser)
@@ -33,7 +33,7 @@ web: $(ENV) ## Run the web UI (auto-opens browser)
 web-headless: $(ENV) ## Run the web UI without opening a browser
 	$(CARGO) run --release --bin aurum-web -- --port $(PORT) --no-open
 
-check: ## Type-check everything
+check: ## Type-check all targets
 	$(CARGO) check --all-targets
 
 fmt: ## Format
