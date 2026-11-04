@@ -152,12 +152,6 @@ const state = {
   mouse: { x: -1, y: -1, active: false }, hover: null, drag: null,
 };
 
-const COL = {
-  bg:'#0b0d10', grid:'rgba(255,255,255,0.06)', border:'#1f242b', dim:'#6b7280',
-  green:'#22c55e', red:'#ef4444', gold:'#d4af37', cyan:'#22d3ee',
-  magenta:'#d946ef', amber:'#eab308', blue:'#3b82f6', purple:'#a855f7', white:'#ffffff',
-};
-
 const pad2 = n => String(n).padStart(2, '0');
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -209,15 +203,16 @@ function renderSignals(signals, minScore){
       <td class="side ${s.side}">${s.side==='bull'?'LONG':'SHORT'}</td>
       <td>${s.isTrendFollowing ? '<span style="color:var(--green)">Trend</span>' : '<span style="color:var(--amber)">Counter</span>'}</td>
       <td>${getStatusBadge(s.status)}</td>
+      <td style="color:var(--cyan)">${s.eta}</td>
       <td>${s.entry.toFixed(2)}</td><td>${s.stop.toFixed(2)}</td>
       <td>${s.tp1.toFixed(2)}</td><td>${s.tp2.toFixed(2)}</td><td>${s.tp3.toFixed(2)}</td>
       <td class="score${s.score>=9?' s9plus':''}">${s.score}/12</td>
     </tr>
-    <tr class="reasons-row"><td colspan="11">${s.reasons.map(r=>`<span class="pill">${r}</span>`).join('')}</td></tr>
+    <tr class="reasons-row"><td colspan="12">${s.reasons.map(r=>`<span class="pill">${r}</span>`).join('')}</td></tr>
   `).join('');
   els.signalsWrap.innerHTML = `
     <table>
-      <thead><tr><th>#</th><th>Strategy</th><th>Side</th><th>Type</th><th>Status</th><th>Entry</th><th>Stop</th><th>TP1</th><th>TP2</th><th>TP3</th><th>Score</th></tr></thead>
+      <thead><tr><th>#</th><th>Strategy</th><th>Side</th><th>Type</th><th>Status</th><th>ETA</th><th>Entry</th><th>Stop</th><th>TP1</th><th>TP2</th><th>TP3</th><th>Score</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
 }
@@ -271,8 +266,10 @@ function renderChart(canvas, candles, o){
   for (const c of vis){ if(c.low<lo)lo=c.low; if(c.high>hi)hi=c.high; }
   for (const z of o.zones){ if(z.bottom<lo)lo=z.bottom; if(z.top>hi)hi=z.top; }
   for (const f of o.fvgs){ if(f.bottom<lo)lo=f.bottom; if(f.top>hi)hi=f.top; }
+  
   for (const s of o.signals){
-    if (s.idx<start) continue;
+    if (s.idx >= end) continue;
+    if (s.status === 'invalidated' || s.status === 'completed') continue;
     lo=Math.min(lo,s.stop,s.entry,s.tp1,s.tp2,s.tp3);
     hi=Math.max(hi,s.stop,s.entry,s.tp1,s.tp2,s.tp3);
   }
@@ -281,7 +278,6 @@ function renderChart(canvas, candles, o){
   const xOf=i=>padL+(i-start)/Math.max(1,end-start)*cw;
   const yOf=p=>padT+(hi-p)/Math.max(1e-9,hi-lo)*ch;
 
-  // Save layout for hitTest
   state.layout = {
     start, end, lo, hi, xOf, yOf, W, H, padL, padR, padT, padB,
     idxFromPx: (px) => start + Math.round((px - padL) / Math.max(1, cw) * (end - start))
@@ -328,45 +324,62 @@ function renderChart(canvas, candles, o){
   for (const iv of o.ifvgs){ if (iv.idx>=start && iv.idx<end){ ctx.fillStyle='#d946ef'; drawDiamond(ctx, xOf(iv.idx), yOf(iv.entryPrice), 4); } }
 
   for (const sig of o.signals){
-    if (sig.idx<start || sig.idx>=end) continue;
-    const x0=xOf(sig.idx), x1=W-padR;
+    if (sig.idx >= end) continue;
+    const x0 = Math.max(padL, xOf(sig.idx));
+    const x1 = W - padR;
     
+    const isHovered = state.hover && state.hover.type === 'signal' && state.hover.data === sig;
     const isActive = sig.status === 'active';
     const isInvalidated = sig.status === 'invalidated' || sig.status === 'completed';
     
-    const entryCol = isInvalidated ? 'rgba(34,197,94,0.3)' : '#22c55e';
-    const stopCol = isInvalidated ? 'rgba(239,68,68,0.3)' : '#ef4444';
-    const tpCol = isInvalidated ? 'rgba(234,179,8,0.3)' : '#eab308';
+    const riskTop = Math.min(yOf(sig.entry), yOf(sig.stop));
+    const riskBot = Math.max(yOf(sig.entry), yOf(sig.stop));
+    ctx.fillStyle = isHovered ? 'rgba(239,68,68,0.15)' : (isInvalidated ? 'rgba(239,68,68,0.03)' : 'rgba(239,68,68,0.08)');
+    ctx.fillRect(x0, riskTop, x1 - x0, riskBot - riskTop);
 
-    ctx.strokeStyle=entryCol; ctx.lineWidth=isActive?2.2:1.4; ctx.setLineDash([]);
+    const rewardTop = Math.min(yOf(sig.entry), yOf(sig.tp3));
+    const rewardBot = Math.max(yOf(sig.entry), yOf(sig.tp3));
+    ctx.fillStyle = isHovered ? 'rgba(34,197,94,0.15)' : (isInvalidated ? 'rgba(34,197,94,0.03)' : 'rgba(34,197,94,0.05)');
+    ctx.fillRect(x0, rewardTop, x1 - x0, rewardBot - rewardTop);
+    
+    const entryCol = isHovered ? '#22c55e' : (isInvalidated ? 'rgba(34,197,94,0.6)' : '#22c55e');
+    const stopCol = isHovered ? '#ef4444' : (isInvalidated ? 'rgba(239,68,68,0.6)' : '#ef4444');
+    const tpCol = isHovered ? '#eab308' : (isInvalidated ? 'rgba(234,179,8,0.6)' : '#eab308');
+
+    const ew = isHovered || isActive ? 2.5 : 1.4;
+    const sw = isHovered || isActive ? 2.0 : 1.2;
+
+    ctx.strokeStyle=entryCol; ctx.lineWidth=ew; ctx.setLineDash([]);
     ctx.beginPath(); ctx.moveTo(x0,yOf(sig.entry)); ctx.lineTo(x1,yOf(sig.entry)); ctx.stroke();
     
-    ctx.strokeStyle=stopCol; ctx.lineWidth=isActive?1.6:1.2; ctx.setLineDash([4,3]);
+    ctx.strokeStyle=stopCol; ctx.lineWidth=sw; ctx.setLineDash([4,3]);
     ctx.beginPath(); ctx.moveTo(x0,yOf(sig.stop)); ctx.lineTo(x1,yOf(sig.stop)); ctx.stroke();
     
-    ctx.strokeStyle=tpCol; ctx.lineWidth=isActive?1.4:1.0; ctx.setLineDash([2,4]);
+    ctx.strokeStyle=tpCol; ctx.lineWidth=ew * 0.8; ctx.setLineDash([2,4]);
     for (const tp of [sig.tp1,sig.tp2,sig.tp3]){
       ctx.beginPath(); ctx.moveTo(x0,yOf(tp)); ctx.lineTo(x1,yOf(tp)); ctx.stroke();
     }
     ctx.setLineDash([]);
     
-    ctx.font='bold 9px ui-monospace,monospace'; ctx.textAlign='left'; ctx.textBaseline='middle';
+    ctx.font='bold 10px ui-monospace,monospace'; ctx.textAlign='left'; ctx.textBaseline='middle';
     const lx=W-padR+3;
     ctx.fillStyle=entryCol; ctx.fillText('E',  lx, yOf(sig.entry));
     ctx.fillStyle=stopCol; ctx.fillText('SL', lx, yOf(sig.stop));
     ctx.fillStyle=tpCol; ctx.fillText('T1', lx, yOf(sig.tp1)); ctx.fillText('T2', lx, yOf(sig.tp2));
     ctx.fillText('T3', lx, yOf(sig.tp3));
 
-    const color = isInvalidated ? 'rgba(200,200,200,0.3)' : (sig.side === 'bull' ? '#22c55e' : '#ef4444');
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    const markerY = yOf(sig.entry);
-    if (sig.side === 'bull') {
-      ctx.moveTo(x0 - 4, markerY - 4); ctx.lineTo(x0 + 4, markerY - 4); ctx.lineTo(x0, markerY + 3);
-    } else {
-      ctx.moveTo(x0 - 4, markerY + 4); ctx.lineTo(x0 + 4, markerY + 4); ctx.lineTo(x0, markerY - 3);
+    if (sig.idx >= start) {
+        const color = isInvalidated ? 'rgba(200,200,200,0.6)' : (sig.side === 'bull' ? '#22c55e' : '#ef4444');
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        const markerY = yOf(sig.entry);
+        if (sig.side === 'bull') {
+            ctx.moveTo(x0 - 5, markerY - 5); ctx.lineTo(x0 + 5, markerY - 5); ctx.lineTo(x0, markerY + 4);
+        } else {
+            ctx.moveTo(x0 - 5, markerY + 5); ctx.lineTo(x0 + 5, markerY + 5); ctx.lineTo(x0, markerY - 4);
+        }
+        ctx.closePath(); ctx.fill();
     }
-    ctx.closePath(); ctx.fill();
   }
 
   const lastPrice=candles[candles.length-1].close, yLast=yOf(lastPrice);
@@ -382,7 +395,9 @@ function renderChart(canvas, candles, o){
   ctx.textAlign='center'; ctx.textBaseline='top';
   for (let i=0;i<=6;i++){
     const idx=start+Math.floor((end-start)*i/6); if (idx>=end || idx>=candles.length) continue;
-    const d=new Date(candles[idx].ts*1000);
+    const c = candles[idx];
+    if (!c || typeof c.ts === 'undefined') continue;
+    const d=new Date(c.ts*1000);
     const isD = o.interval==='1day';
     const label = isD ? `${d.getUTCMonth()+1}/${d.getUTCDate()}`
                       : `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
@@ -397,17 +412,16 @@ function hitTest(mx, my) {
   const { start, end, xOf, yOf, idxFromPx, W, H, padL, padR, padT, padB } = L;
   if (mx < padL || mx > W - padR || my < padT || my > H - padB) return null;
 
-  // 1. Signals
   for (const sig of state.opts.signals) {
-    if (sig.idx < start || sig.idx >= end) continue;
-    if (mx < xOf(sig.idx)) continue;
+    if (sig.idx >= end) continue;
+    const x0 = Math.max(padL, xOf(sig.idx));
+    if (mx < x0) continue;
     const lines = [sig.entry, sig.stop, sig.tp1, sig.tp2, sig.tp3];
     for (const p of lines) {
-      if (Math.abs(my - yOf(p)) < 6) return { type: 'signal', data: sig };
+      if (Math.abs(my - yOf(p)) < 8) return { type: 'signal', data: sig };
     }
   }
 
-  // 2. Markers, Sweeps, IFVGs
   for (const ev of state.opts.structures) {
     if (ev.idx < start || ev.idx >= end) continue;
     if (Math.hypot(mx - xOf(ev.idx), my - yOf(ev.level)) < 10) return { type: 'marker', kind: ev.kind, data: ev };
@@ -421,7 +435,6 @@ function hitTest(mx, my) {
     if (Math.hypot(mx - xOf(iv.idx), my - yOf(iv.entryPrice)) < 9) return { type: 'ifvg', data: iv };
   }
 
-  // 3. Zones
   for (const z of state.opts.zones) {
     const x0 = xOf(Math.max(start, z.startIdx));
     if (x0 >= W - padR || mx < x0) continue;
@@ -429,7 +442,6 @@ function hitTest(mx, my) {
     if (my >= Math.min(yT, yB) && my <= Math.max(yT, yB)) return { type: 'zone', data: z };
   }
 
-  // 4. Candle
   const idx = idxFromPx(mx);
   if (idx >= start && idx < end && idx < state.candles.length) {
     return { type: 'candle', data: state.candles[idx], idx };
@@ -464,7 +476,7 @@ function buildTooltipHtml(h) {
         <div class="tt-grid">
           <span class="tt-label">Level</span><span class="tt-val ${cls}">${ev.level.toFixed(2)}</span>
           <span class="tt-label">Bar</span><span class="tt-val">#${ev.idx}</span>
-          <span class="tt-label">Time</span><span class="tt-val">${fmtTsFull(state.candles[ev.idx].ts, iv)}</span>
+          <span class="tt-label">Time</span><span class="tt-val">${fmtTsFull(state.candles[ev.idx]?.ts || 0, iv)}</span>
         </div>`;
     }
     case 'sweep': {
@@ -475,7 +487,7 @@ function buildTooltipHtml(h) {
         <div class="tt-grid">
           <span class="tt-label">Level</span><span class="tt-val ${cls}">${sw.level.toFixed(2)}</span>
           <span class="tt-label">Bar</span><span class="tt-val">#${sw.idx}</span>
-          <span class="tt-label">Time</span><span class="tt-val">${fmtTsFull(state.candles[sw.idx].ts, iv)}</span>
+          <span class="tt-label">Time</span><span class="tt-val">${fmtTsFull(state.candles[sw.idx]?.ts || 0, iv)}</span>
         </div>`;
     }
     case 'ifvg': {
@@ -487,7 +499,7 @@ function buildTooltipHtml(h) {
           <span class="tt-label">Entry</span><span class="tt-val ${cls}">${ivg.entryPrice.toFixed(2)}</span>
           <span class="tt-label">Gap top</span><span class="tt-val">${ivg.fvg.top.toFixed(2)}</span>
           <span class="tt-label">Gap bottom</span><span class="tt-val">${ivg.fvg.bottom.toFixed(2)}</span>
-          <span class="tt-label">Time</span><span class="tt-val">${fmtTsFull(state.candles[ivg.idx].ts, iv)}</span>
+          <span class="tt-label">Time</span><span class="tt-val">${fmtTsFull(state.candles[ivg.idx]?.ts || 0, iv)}</span>
         </div>`;
     }
     case 'zone': {
@@ -498,7 +510,7 @@ function buildTooltipHtml(h) {
           <span class="tt-label">Top</span><span class="tt-val ${cls}">${z.top.toFixed(2)}</span>
           <span class="tt-label">Bottom</span><span class="tt-val ${cls}">${z.bottom.toFixed(2)}</span>
           <span class="tt-label">Height</span><span class="tt-val">${(z.top - z.bottom).toFixed(2)}</span>
-          <span class="tt-label">Start</span><span class="tt-val">${fmtTsFull(state.candles[z.startIdx].ts, iv)}</span>
+          <span class="tt-label">Start</span><span class="tt-val">${fmtTsFull(state.candles[z.startIdx]?.ts || 0, iv)}</span>
         </div>`;
     }
     case 'signal': {
@@ -512,7 +524,8 @@ function buildTooltipHtml(h) {
         <div class="tt-grid">
           <span class="tt-label">Side</span><span class="tt-val ${cls}">${s.side==='bull'?'LONG':'SHORT'}</span>
           <span class="tt-label">Type</span><span class="tt-val">${s.isTrendFollowing ? '<span style="color:var(--green)">Trend</span>' : '<span style="color:var(--amber)">Counter</span>'}</span>
-          <span class="tt-label">Status</span><span class="tt-val" style="color:${statusColor};font-weight:bold">${s.status.toUpperCase()}</span>
+          <span class="tt-label">Status</span><span class="tt-val" style="color:${statusColor};font-weight:bold">${(s.status || 'unknown').toUpperCase()}</span>
+          <span class="tt-label">ETA</span><span class="tt-val" style="color:var(--cyan)">${s.eta}</span>
           <span class="tt-label">Entry</span><span class="tt-val">${s.entry.toFixed(2)}</span>
           <span class="tt-label">Stop</span><span class="tt-val bear">${s.stop.toFixed(2)}</span>
           <span class="tt-label">TP1</span><span class="tt-val">${s.tp1.toFixed(2)} <span class="tt-dim">(${rr1}R)</span></span>
@@ -639,6 +652,8 @@ async function runAnalysis(){
     state.hover = null;
     state.mouse = { x: -1, y: -1, active: false };
 
+    lastData = { candles: data.candles, opts: state.opts };
+
     renderChart(els.chart, data.candles, state.opts);
     updateBias(data.bias);
     renderSignals(data.signals, minScore);
@@ -652,7 +667,7 @@ async function runAnalysis(){
       setStatus(`✖ ${e.message || e}`, 'error');
     }
   } finally {
-    els.fetchBtn.disabled=false;
+    els.fetchBtn.disabled = false;
   }
 }
 

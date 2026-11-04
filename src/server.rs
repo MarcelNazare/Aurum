@@ -163,10 +163,10 @@ async fn analyze(
     signals.extend(strategy2(&candles, &htf, htf_ratio));
     signals.extend(strategy3(&candles, &htf, htf_ratio));
     
-    // New pipeline:
     signals.retain(|s| s.score >= min_score);
     crate::deduplicate_signals(&mut signals);
     crate::evaluate_signals(&candles, &mut signals);
+    crate::enrich_signals(&mut signals, &candles, &interval);
     signals.sort_by_key(|s| s.idx);
 
     let mut zones = Vec::new();

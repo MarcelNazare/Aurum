@@ -163,6 +163,7 @@ async fn run_analysis(
     signals.retain(|s| s.score >= min_score);
     aurum::deduplicate_signals(&mut signals);
     aurum::evaluate_signals(&candles, &mut signals);
+    aurum::enrich_signals(&mut signals, &candles, &interval);
     signals.sort_by_key(|s| s.idx);
 
     let mut zones = Vec::new();
@@ -1079,6 +1080,7 @@ fn render_tooltip(ui: &mut egui::Ui, layout: &Layout, data: &AnalysisData, h: Ho
                     SignalStatus::Completed => ui.colored_label(COL_GOLD, "COMPLETED"),
                 };
             });
+            ui.horizontal(|ui| { ui.label("ETA:"); ui.colored_label(COL_CYAN, &s.eta); });
             ui.horizontal(|ui| { ui.label("Entry:"); ui.label(format!("{:.2}", s.entry)); });
             ui.horizontal(|ui| { ui.label("Stop:");  ui.colored_label(COL_RED, format!("{:.2}", s.stop)); });
             ui.horizontal(|ui| { ui.label("TP1:");   ui.label(format!("{:.2}", s.tp1)); });
@@ -1117,7 +1119,7 @@ fn signals_ui(ui: &mut egui::Ui, data: &AnalysisData) {
             .spacing([14.0, 4.0])
             .min_col_width(60.0)
             .show(ui, |ui| {
-                for h in ["#", "Strategy", "Side", "Type", "Status", "Entry", "Stop", "TP1", "TP2", "TP3", "Score", "Reasons"] {
+                for h in ["#", "Strategy", "Side", "Type", "Status", "ETA", "Entry", "Stop", "TP1", "TP2", "TP3", "Score", "Reasons"] {
                     ui.label(egui::RichText::new(h).strong().color(COL_DIM));
                 }
                 ui.end_row();
@@ -1142,6 +1144,8 @@ fn signals_ui(ui: &mut egui::Ui, data: &AnalysisData) {
                         SignalStatus::Completed => ("TP HIT", COL_GOLD),
                     };
                     ui.colored_label(status_col, status_txt);
+
+                    ui.colored_label(COL_CYAN, &s.eta);
 
                     ui.monospace(format!("{:.2}", s.entry));
                     ui.monospace(format!("{:.2}", s.stop));

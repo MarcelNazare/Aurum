@@ -119,6 +119,7 @@ pub struct Signal {
     pub entry_bot: f64,
     pub is_trend_following: bool,
     pub status: SignalStatus,
+    pub eta: String,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -379,6 +380,7 @@ fn build_signal(
         score: score_val, reasons, entry_top, entry_bot,
         is_trend_following: factors.htf_align,
         status: SignalStatus::Waiting,
+        eta: "—".to_string(),
     })
 }
 
@@ -567,7 +569,6 @@ pub fn strategy3(ltf: &[Candle], htf: &[Candle], htf_n: usize) -> Vec<Signal> {
 // ═══════════════════════════════════════════════════════════════════════════
 
 pub fn deduplicate_signals(signals: &mut Vec<Signal>) {
-    // Sort by index, then by score (descending) so we keep the highest-scoring version of duplicates
     signals.sort_by(|a, b| {
         a.idx.cmp(&b.idx)
             .then_with(|| b.score.cmp(&a.score))
@@ -597,20 +598,16 @@ pub fn evaluate_signals(candles: &[Candle], signals: &mut [Signal]) {
             continue;
         }
         
-        // Walk forward from the signal bar to see what happened
         for i in start..candles.len() {
             let c = &candles[i];
             match state {
                 SignalStatus::Waiting => {
-                    // Check if stopped out before entry
                     if sig.side == Side::Bear && c.high >= sig.stop { state = SignalStatus::Invalidated; break; }
                     if sig.side == Side::Bull && c.low <= sig.stop { state = SignalStatus::Invalidated; break; }
-                    // Check if entry was touched
                     if sig.side == Side::Bear && c.low <= sig.entry { state = SignalStatus::Active; }
                     if sig.side == Side::Bull && c.high >= sig.entry { state = SignalStatus::Active; }
                 }
                 SignalStatus::Active => {
-                    // Check if stopped out or hit TP3
                     if sig.side == Side::Bear && c.high >= sig.stop { state = SignalStatus::Invalidated; break; }
                     if sig.side == Side::Bull && c.low <= sig.stop { state = SignalStatus::Invalidated; break; }
                     if sig.side == Side::Bear && c.low <= sig.tp3 { state = SignalStatus::Completed; break; }
@@ -620,6 +617,60 @@ pub fn evaluate_signals(candles: &[Candle], signals: &mut [Signal]) {
             }
         }
         sig.status = state;
+    }
+}
+
+pub fn enrich_signals(signals: &mut [Signal], candles: &[Candle], interval: &str) {
+    let interval_mins = match interval {
+        "1min" => 1, "5min" => 5, "15min" => 15, "30min" => 30,
+        "1h" => 60, "4h" => 240, "1day" => 1440, _ => 15,
+    };
+
+    for sig in signals.iter_mut() {
+        if candles.len() < 20 {
+            sig.eta = "—".to_string();
+            continue;
+        }
+
+        // If the trade is already active, the entry has been hit.
+        if sig.status == SignalStatus::Active {
+            sig.eta = "Hit".to_string();
+            continue;
+        }
+        
+        // If it's invalid or completed, we don't calculate ETA.
+        if sig.status == SignalStatus::Completed || sig.status == SignalStatus::Invalidated {
+            sig.eta = "—".to_string();
+            continue;
+        }
+
+        let last = candles.last().unwrap();
+        let dist = (last.close - sig.entry).abs();
+        if dist < 1e-9 {
+            sig.eta = "0m".to_string();
+            continue;
+        }
+
+        let mut sum_range = 0.0;
+        for c in &candles[candles.len() - 20..] {
+            sum_range += c.high - c.low;
+        }
+        let avg_range = sum_range / 20.0;
+        let progress_per_candle = (avg_range * 0.5).max(1e-9);
+        let bars = dist / progress_per_candle;
+        let minutes = bars * interval_mins as f64;
+
+        sig.eta = if minutes < 60.0 {
+            format!("{}m", minutes.round())
+        } else {
+            let h = (minutes / 60.0).floor();
+            let m = (minutes % 60.0).round();
+            if h < 24.0 { format!("{}h {}m", h, m) }
+            else {
+                let d = (h / 24.0).floor();
+                format!("{}d {}h", d, (h % 24.0).floor())
+            }
+        };
     }
 }
 
