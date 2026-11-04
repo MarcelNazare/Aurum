@@ -13,6 +13,7 @@ use aurum::{
     aggregate, detect_structure, fetch_twelvedata, find_fvgs, fvg_status_at, htf_bias,
     ifvg_entries, liquidity_sweeps, order_block_before, strategy1, strategy2, strategy3,
     Candle, Fvg, FvgStatus, IfvgEntry, Side, Signal, StructureEvent, StructureKind, Sweep, Zone,
+    SignalStatus,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -158,7 +159,10 @@ async fn run_analysis(
     signals.extend(strategy1(&candles, &htf, htf_ratio));
     signals.extend(strategy2(&candles, &htf, htf_ratio));
     signals.extend(strategy3(&candles, &htf, htf_ratio));
+    
     signals.retain(|s| s.score >= min_score);
+    aurum::deduplicate_signals(&mut signals);
+    aurum::evaluate_signals(&candles, &mut signals);
     signals.sort_by_key(|s| s.idx);
 
     let mut zones = Vec::new();
@@ -837,33 +841,40 @@ fn draw_signal_lines(painter: &egui::Painter, layout: &Layout, data: &AnalysisDa
         let x0 = layout.x_of(sig.idx);
         let x1 = layout.inner.right();
 
-        let ew: f32 = if is_hover { 2.2 } else { 1.4 };
-        let sw: f32 = if is_hover { 2.0 } else { 1.2 };
+        let is_active = sig.status == SignalStatus::Active;
+        let is_invalidated = sig.status == SignalStatus::Invalidated || sig.status == SignalStatus::Completed;
+
+        let entry_col = if is_invalidated { Color32::from_rgba_premultiplied(0x22, 0xc5, 0x5e, 80) } else { COL_GREEN };
+        let stop_col = if is_invalidated { Color32::from_rgba_premultiplied(0xef, 0x44, 0x44, 80) } else { COL_RED };
+        let tp_col = if is_invalidated { Color32::from_rgba_premultiplied(0xea, 0xb3, 0x08, 80) } else { COL_AMBER };
+
+        let ew: f32 = if is_hover || is_active { 2.2 } else { 1.4 };
+        let sw: f32 = if is_hover || is_active { 2.0 } else { 1.2 };
 
         painter.line_segment(
             [Pos2::new(x0, layout.y_of(sig.entry)), Pos2::new(x1, layout.y_of(sig.entry))],
-            Stroke::new(ew, COL_GREEN),
+            Stroke::new(ew, entry_col),
         );
         painter.line_segment(
             [Pos2::new(x0, layout.y_of(sig.stop)), Pos2::new(x1, layout.y_of(sig.stop))],
-            Stroke::new(sw, COL_RED),
+            Stroke::new(sw, stop_col),
         );
         for tp in [sig.tp1, sig.tp2, sig.tp3] {
             painter.line_segment(
                 [Pos2::new(x0, layout.y_of(tp)), Pos2::new(x1, layout.y_of(tp))],
-                Stroke::new(if is_hover { 1.8_f32 } else { 1.0_f32 }, COL_AMBER),
+                Stroke::new(if is_hover || is_active { 1.8_f32 } else { 1.0_f32 }, tp_col),
             );
         }
 
         let lx = layout.inner.right() + 3.0;
-        painter.text(Pos2::new(lx, layout.y_of(sig.entry)), egui::Align2::LEFT_CENTER, "E",  font.clone(), COL_GREEN);
-        painter.text(Pos2::new(lx, layout.y_of(sig.stop)),  egui::Align2::LEFT_CENTER, "SL", font.clone(), COL_RED);
-        painter.text(Pos2::new(lx, layout.y_of(sig.tp1)),   egui::Align2::LEFT_CENTER, "T1", font.clone(), COL_AMBER);
-        painter.text(Pos2::new(lx, layout.y_of(sig.tp2)),   egui::Align2::LEFT_CENTER, "T2", font.clone(), COL_AMBER);
-        painter.text(Pos2::new(lx, layout.y_of(sig.tp3)),   egui::Align2::LEFT_CENTER, "T3", font.clone(), Color32::from_rgb(0xd9, 0x77, 0x06));
+        painter.text(Pos2::new(lx, layout.y_of(sig.entry)), egui::Align2::LEFT_CENTER, "E",  font.clone(), entry_col);
+        painter.text(Pos2::new(lx, layout.y_of(sig.stop)),  egui::Align2::LEFT_CENTER, "SL", font.clone(), stop_col);
+        painter.text(Pos2::new(lx, layout.y_of(sig.tp1)),   egui::Align2::LEFT_CENTER, "T1", font.clone(), tp_col);
+        painter.text(Pos2::new(lx, layout.y_of(sig.tp2)),   egui::Align2::LEFT_CENTER, "T2", font.clone(), tp_col);
+        painter.text(Pos2::new(lx, layout.y_of(sig.tp3)),   egui::Align2::LEFT_CENTER, "T3", font.clone(), tp_col);
 
         // Signal bar marker
-        let color = if sig.side == Side::Bull { COL_GREEN } else { COL_RED };
+        let color = if is_invalidated { Color32::from_rgba_premultiplied(0xc8, 0xc8, 0xc8, 80) } else if sig.side == Side::Bull { COL_GREEN } else { COL_RED };
         let y = layout.y_of(sig.entry);
         let pts = if sig.side == Side::Bull {
             vec![Pos2::new(x0 - 5.0, y - 5.0), Pos2::new(x0 + 5.0, y - 5.0), Pos2::new(x0, y + 4.0)]
@@ -1055,6 +1066,19 @@ fn render_tooltip(ui: &mut egui::Ui, layout: &Layout, data: &AnalysisData, h: Ho
             ui.strong(s.strategy);
             ui.separator();
             ui.horizontal(|ui| { ui.label("Side:"); ui.colored_label(col, if s.side == Side::Bull { "LONG" } else { "SHORT" }); });
+            ui.horizontal(|ui| { 
+                ui.label("Type:"); 
+                if s.is_trend_following { ui.colored_label(COL_GREEN, "Trend"); } else { ui.colored_label(COL_AMBER, "Counter"); }
+            });
+            ui.horizontal(|ui| { 
+                ui.label("Status:"); 
+                match s.status {
+                    SignalStatus::Active => ui.colored_label(COL_GREEN, "ACTIVE"),
+                    SignalStatus::Waiting => ui.colored_label(COL_CYAN, "WAITING"),
+                    SignalStatus::Invalidated => ui.colored_label(COL_RED, "INVALIDATED"),
+                    SignalStatus::Completed => ui.colored_label(COL_GOLD, "COMPLETED"),
+                };
+            });
             ui.horizontal(|ui| { ui.label("Entry:"); ui.label(format!("{:.2}", s.entry)); });
             ui.horizontal(|ui| { ui.label("Stop:");  ui.colored_label(COL_RED, format!("{:.2}", s.stop)); });
             ui.horizontal(|ui| { ui.label("TP1:");   ui.label(format!("{:.2}", s.tp1)); });
@@ -1093,7 +1117,7 @@ fn signals_ui(ui: &mut egui::Ui, data: &AnalysisData) {
             .spacing([14.0, 4.0])
             .min_col_width(60.0)
             .show(ui, |ui| {
-                for h in ["#", "Strategy", "Side", "Entry", "Stop", "TP1", "TP2", "TP3", "Score", "Reasons"] {
+                for h in ["#", "Strategy", "Side", "Type", "Status", "Entry", "Stop", "TP1", "TP2", "TP3", "Score", "Reasons"] {
                     ui.label(egui::RichText::new(h).strong().color(COL_DIM));
                 }
                 ui.end_row();
@@ -1106,6 +1130,19 @@ fn signals_ui(ui: &mut egui::Ui, data: &AnalysisData) {
                         Side::Bear => ("SHORT", COL_RED),
                     };
                     ui.colored_label(col, egui::RichText::new(txt).strong());
+                    
+                    let type_txt = if s.is_trend_following { "Trend" } else { "Counter" };
+                    let type_col = if s.is_trend_following { COL_GREEN } else { COL_AMBER };
+                    ui.colored_label(type_col, type_txt);
+                    
+                    let (status_txt, status_col) = match s.status {
+                        SignalStatus::Active => ("ACTIVE", COL_GREEN),
+                        SignalStatus::Waiting => ("WAITING", COL_CYAN),
+                        SignalStatus::Invalidated => ("INVALID", COL_RED),
+                        SignalStatus::Completed => ("TP HIT", COL_GOLD),
+                    };
+                    ui.colored_label(status_col, status_txt);
+
                     ui.monospace(format!("{:.2}", s.entry));
                     ui.monospace(format!("{:.2}", s.stop));
                     ui.monospace(format!("{:.2}", s.tp1));

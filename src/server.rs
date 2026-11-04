@@ -95,7 +95,6 @@ pub async fn run(
     if open_browser {
         let url_bg = url.clone();
         tokio::spawn(async move {
-            // give axum a beat to start accepting connections
             tokio::time::sleep(Duration::from_millis(250)).await;
             match webbrowser::open(&url_bg) {
                 Ok(_)  => println!("✔ opened {} in your default browser", url_bg),
@@ -163,7 +162,11 @@ async fn analyze(
     signals.extend(strategy1(&candles, &htf, htf_ratio));
     signals.extend(strategy2(&candles, &htf, htf_ratio));
     signals.extend(strategy3(&candles, &htf, htf_ratio));
+    
+    // New pipeline:
     signals.retain(|s| s.score >= min_score);
+    crate::deduplicate_signals(&mut signals);
+    crate::evaluate_signals(&candles, &mut signals);
     signals.sort_by_key(|s| s.idx);
 
     let mut zones = Vec::new();

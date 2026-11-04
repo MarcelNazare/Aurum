@@ -93,6 +93,15 @@ pub struct Zone {
     pub label: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SignalStatus {
+    Waiting,
+    Active,
+    Invalidated,
+    Completed,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Signal {
@@ -108,6 +117,8 @@ pub struct Signal {
     pub reasons: Vec<String>,
     pub entry_top: f64,
     pub entry_bot: f64,
+    pub is_trend_following: bool,
+    pub status: SignalStatus,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -320,7 +331,7 @@ pub fn premium_discount(c: &[Candle], idx: usize, lookback: usize) -> f64 {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CONFLUENCE SCORING (internal)
+// CONFLUENCE SCORING
 // ═══════════════════════════════════════════════════════════════════════════
 
 struct Factors {
@@ -366,6 +377,8 @@ fn build_signal(
     Some(Signal {
         strategy, side, idx, entry, stop, tp1, tp2, tp3,
         score: score_val, reasons, entry_top, entry_bot,
+        is_trend_following: factors.htf_align,
+        status: SignalStatus::Waiting,
     })
 }
 
@@ -547,6 +560,67 @@ pub fn strategy3(ltf: &[Candle], htf: &[Candle], htf_n: usize) -> Vec<Signal> {
         ) { out.push(sig); }
     }
     out
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SIGNAL UTILITIES
+// ═══════════════════════════════════════════════════════════════════════════
+
+pub fn deduplicate_signals(signals: &mut Vec<Signal>) {
+    // Sort by index, then by score (descending) so we keep the highest-scoring version of duplicates
+    signals.sort_by(|a, b| {
+        a.idx.cmp(&b.idx)
+            .then_with(|| b.score.cmp(&a.score))
+    });
+
+    let mut unique: Vec<Signal> = Vec::new();
+    for sig in signals.drain(..) {
+        let is_dup = unique.iter().any(|u| {
+            u.side == sig.side
+                && (u.entry - sig.entry).abs() < 0.01
+                && (u.stop - sig.stop).abs() < 0.01
+        });
+        if !is_dup {
+            unique.push(sig);
+        }
+    }
+    *signals = unique;
+}
+
+pub fn evaluate_signals(candles: &[Candle], signals: &mut [Signal]) {
+    for sig in signals.iter_mut() {
+        let mut state = SignalStatus::Waiting;
+        let start = sig.idx + 1;
+        
+        if start >= candles.len() {
+            sig.status = state;
+            continue;
+        }
+        
+        // Walk forward from the signal bar to see what happened
+        for i in start..candles.len() {
+            let c = &candles[i];
+            match state {
+                SignalStatus::Waiting => {
+                    // Check if stopped out before entry
+                    if sig.side == Side::Bear && c.high >= sig.stop { state = SignalStatus::Invalidated; break; }
+                    if sig.side == Side::Bull && c.low <= sig.stop { state = SignalStatus::Invalidated; break; }
+                    // Check if entry was touched
+                    if sig.side == Side::Bear && c.low <= sig.entry { state = SignalStatus::Active; }
+                    if sig.side == Side::Bull && c.high >= sig.entry { state = SignalStatus::Active; }
+                }
+                SignalStatus::Active => {
+                    // Check if stopped out or hit TP3
+                    if sig.side == Side::Bear && c.high >= sig.stop { state = SignalStatus::Invalidated; break; }
+                    if sig.side == Side::Bull && c.low <= sig.stop { state = SignalStatus::Invalidated; break; }
+                    if sig.side == Side::Bear && c.low <= sig.tp3 { state = SignalStatus::Completed; break; }
+                    if sig.side == Side::Bull && c.high >= sig.tp3 { state = SignalStatus::Completed; break; }
+                }
+                _ => {}
+            }
+        }
+        sig.status = state;
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
