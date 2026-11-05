@@ -3,4 +3,4 @@
 target/
 Cargo.lock
 
-.aurum_api_key.txt
+aurum_api_key.txt
