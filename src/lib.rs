@@ -632,13 +632,11 @@ pub fn enrich_signals(signals: &mut [Signal], candles: &[Candle], interval: &str
             continue;
         }
 
-        // If the trade is already active, the entry has been hit.
         if sig.status == SignalStatus::Active {
             sig.eta = "Hit".to_string();
             continue;
         }
         
-        // If it's invalid or completed, we don't calculate ETA.
         if sig.status == SignalStatus::Completed || sig.status == SignalStatus::Invalidated {
             sig.eta = "—".to_string();
             continue;

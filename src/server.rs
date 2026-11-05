@@ -31,6 +31,7 @@ struct AnalyzeQuery {
     outputsize: Option<usize>,
     htf_ratio: Option<usize>,
     min_score: Option<u32>,
+    api_key: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -115,13 +116,14 @@ async fn analyze(
     State(state): State<AppState>,
     Query(q): Query<AnalyzeQuery>,
 ) -> Result<Json<AnalyzeResponse>, AppError> {
+    let key = q.api_key.filter(|k| !k.is_empty()).unwrap_or_else(|| state.api_key.clone());
     let symbol     = q.symbol.unwrap_or_else(|| state.default_symbol.clone());
     let interval   = q.interval.unwrap_or_else(|| "15min".into());
     let outputsize = q.outputsize.unwrap_or(500).clamp(100, 5000);
     let htf_ratio  = q.htf_ratio.unwrap_or(5).clamp(2, 50);
     let min_score  = q.min_score.unwrap_or(6).min(12);
 
-    let candles = crate::fetch_twelvedata(&state.api_key, &symbol, &interval, outputsize)
+    let candles = crate::fetch_twelvedata(&key, &symbol, &interval, outputsize)
         .await
         .map_err(|e| AppError::Fetch(e.to_string()))?;
 

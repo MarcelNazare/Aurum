@@ -16,6 +16,8 @@ use aurum::{
     SignalStatus,
 };
 
+const KEY_FILE: &str = "aurum_api_key.txt";
+
 // ═══════════════════════════════════════════════════════════════════════════
 // PALETTE
 // ═══════════════════════════════════════════════════════════════════════════
@@ -232,7 +234,7 @@ impl AurumApp {
         min_score: u32,
     ) -> Self {
         let status = if api_key.is_empty() || api_key == "your_api_key_here" {
-            ("Set TWELVE_DATA_API_KEY in .env, then click Fetch & Analyze.".to_string(), StatusKind::Error)
+            ("Set your API key above, then click Fetch & Analyze.".to_string(), StatusKind::Error)
         } else {
             ("Ready. Click Fetch & Analyze.".to_string(), StatusKind::Info)
         };
@@ -258,11 +260,15 @@ impl AurumApp {
         if self.loading { return; }
         if self.api_key.is_empty() || self.api_key == "your_api_key_here" {
             self.status = (
-                "TWELVE_DATA_API_KEY missing or placeholder — edit .env first.".into(),
+                "TWELVE_DATA_API_KEY missing or placeholder.".into(),
                 StatusKind::Error,
             );
             return;
         }
+
+        // Save API key to local file for next time
+        let _ = std::fs::write(KEY_FILE, &self.api_key);
+
         self.loading = true;
         self.status = (
             format!("Fetching {} × {} candles for {}…", self.outputsize, self.interval, self.symbol),
@@ -340,6 +346,9 @@ impl eframe::App for AurumApp {
                     ui.heading(egui::RichText::new("AURUM").color(COL_GOLD).strong());
                     ui.label(egui::RichText::new(format!("{} · ICT Scanner", self.symbol)).color(COL_DIM));
                     ui.separator();
+
+                    ui.label("API Key:");
+                    ui.add(egui::TextEdit::singleline(&mut self.api_key).password(true).desired_width(150.0));
 
                     ui.label("Interval:");
                     egui::ComboBox::from_id_source("interval")
@@ -874,7 +883,6 @@ fn draw_signal_lines(painter: &egui::Painter, layout: &Layout, data: &AnalysisDa
         painter.text(Pos2::new(lx, layout.y_of(sig.tp2)),   egui::Align2::LEFT_CENTER, "T2", font.clone(), tp_col);
         painter.text(Pos2::new(lx, layout.y_of(sig.tp3)),   egui::Align2::LEFT_CENTER, "T3", font.clone(), tp_col);
 
-        // Signal bar marker
         let color = if is_invalidated { Color32::from_rgba_premultiplied(0xc8, 0xc8, 0xc8, 80) } else if sig.side == Side::Bull { COL_GREEN } else { COL_RED };
         let y = layout.y_of(sig.entry);
         let pts = if sig.side == Side::Bull {
@@ -1201,7 +1209,11 @@ fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
 fn main() -> eframe::Result<()> {
     dotenv().ok();
 
-    let api_key = std::env::var("TWELVE_DATA_API_KEY").unwrap_or_default();
+    // Load key from .env, but prefer the locally saved key file if it exists
+    let api_key = std::fs::read_to_string(KEY_FILE)
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| std::env::var("TWELVE_DATA_API_KEY").unwrap_or_default());
+
     let symbol = std::env::var("AURUM_SYMBOL").unwrap_or_else(|_| "XAU/USD".into());
     let interval = std::env::var("AURUM_INTERVAL").unwrap_or_else(|_| "15min".into());
     let outputsize: usize = env_or("AURUM_OUTPUTSIZE", 500);

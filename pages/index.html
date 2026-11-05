@@ -89,6 +89,10 @@
 <section class="config">
   <div class="field-row">
     <div class="field">
+      <label for="apiKey">API Key <span style="text-transform:none;font-size:10px;color:var(--dim);">(saved locally)</span></label>
+      <input type="password" id="apiKey" placeholder="Enter your Twelve Data API key..." autocomplete="off">
+    </div>
+    <div class="field">
       <label for="interval">Interval</label>
       <select id="interval">
         <option>1min</option><option>5min</option>
@@ -131,6 +135,7 @@
 
 <script>
 const els = {
+  apiKey:      document.getElementById('apiKey'),
   interval:    document.getElementById('interval'),
   outputsize:  document.getElementById('outputsize'),
   window:      document.getElementById('window'),
@@ -624,19 +629,36 @@ els.resetBtn.addEventListener('click', () => {
   if (lastData) renderChart(els.chart, lastData.candles, lastData.opts);
 });
 
+// Initialize API Key input from localStorage
+const savedKey = localStorage.getItem('aurum_api_key');
+if (savedKey) {
+  els.apiKey.value = savedKey;
+}
+
 async function runAnalysis(){
+  const apiKey     = els.apiKey.value.trim();
   const interval   = els.interval.value;
   const outputsize = Math.max(100, parseInt(els.outputsize.value,10)||500);
   const windowVal  = Math.max(20,  parseInt(els.window.value,10)||100);
   const htfRatio   = Math.max(2,   parseInt(els.htfRatio.value,10)||5);
   const minScore   = Math.max(0,   parseInt(els.minScore.value,10)||6);
 
+  if (apiKey) {
+    localStorage.setItem('aurum_api_key', apiKey);
+  } else {
+    localStorage.removeItem('aurum_api_key');
+  }
+
   els.fetchBtn.disabled=true;
   setStatus(`Fetching ${outputsize} × ${interval} candles…`, 'info', true);
 
   try {
-    const url = `/api/analyze?interval=${encodeURIComponent(interval)}`
-              + `&outputsize=${outputsize}&htf_ratio=${htfRatio}&min_score=${minScore}`;
+    let url = `/api/analyze?interval=${encodeURIComponent(interval)}`
+            + `&outputsize=${outputsize}&htf_ratio=${htfRatio}&min_score=${minScore}`;
+    if (apiKey) {
+      url += `&api_key=${encodeURIComponent(apiKey)}`;
+    }
+
     const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
