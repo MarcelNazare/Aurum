@@ -2,3 +2,5 @@
 .env.local
 target/
 Cargo.lock
+
+.aurum_api_key.txt
